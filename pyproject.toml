@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dexport"
+version = "0.0.1"
+description = "Drive your own Discord session from the CLI over CDP."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Patruxs" }]
+
+dependencies = [
+    "playwright>=1.40",
+    "typer>=0.12",
+    "rich>=13.0",
+]
+
+[project.scripts]
+dexport = "dexport.cli:app"
+
+[tool.setuptools]
+packages = ["dexport"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
