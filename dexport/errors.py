@@ -18,3 +18,25 @@ class LauncherError(DexportError):
 
 class SessionError(DexportError):
     """The CDP session could not be established or the target page was lost."""
+
+
+class HeaderCaptureError(DexportError):
+    """No authorized ``/api/v9`` request was observed to snapshot headers from."""
+
+
+class ApiError(DexportError):
+    """A Discord API call returned a non-success status.
+
+    Attributes
+    ----------
+    status:
+        HTTP status code returned by Discord.
+    body:
+        Parsed JSON body when available, otherwise the raw text.
+    """
+
+    def __init__(self, status: int, body: object, message: str | None = None) -> None:
+        self.status = status
+        self.body = body
+        detail = message or extract_message(body) or ""
+        super().__init__(f"Discord API returned {status}{': ' + detail if detail else ''}")
