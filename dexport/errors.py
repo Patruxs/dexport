@@ -40,3 +40,20 @@ class ApiError(DexportError):
         self.body = body
         detail = message or extract_message(body) or ""
         super().__init__(f"Discord API returned {status}{': ' + detail if detail else ''}")
+
+
+class RateLimitError(DexportError):
+    """A request kept hitting rate limits past the retry budget."""
+
+
+class ResolveError(DexportError):
+    """A guild or channel name could not be resolved to an ID."""
+
+
+def extract_message(body: object) -> str | None:
+    """Discord's human-readable ``message`` field from an error body, if any."""
+    if isinstance(body, dict):
+        msg = body.get("message")
+        if isinstance(msg, str):
+            return msg
+    return None
