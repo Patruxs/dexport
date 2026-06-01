@@ -61,3 +61,29 @@ def test_api_error_message_without_detail(body):
     err = ApiError(500, body)
     assert str(err) == "Discord API returned 500"
     assert err.body == body
+
+
+def test_api_error_explicit_message_overrides_body():
+    err = ApiError(401, {"message": "401: Unauthorized"}, "token rotated")
+    assert str(err) == "Discord API returned 401: token rotated"
+    assert err.body == {"message": "401: Unauthorized"}  # still available for inspection
+
+
+def test_api_error_status_zero_for_renderer_failures():
+    err = ApiError(0, None, "fetch failed in renderer: TypeError")
+    assert str(err) == "Discord API returned 0: fetch failed in renderer: TypeError"
+    assert err.status == 0
+
+
+# --------------------------------------------------------------------------
+# Hierarchy
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cls", ALL_ERRORS)
+def test_every_error_derives_from_dexport_error(cls):
+    assert issubclass(cls, DexportError)
+
+
+def test_dexport_error_is_an_exception():
+    assert issubclass(DexportError, Exception)
