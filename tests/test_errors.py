@@ -87,3 +87,24 @@ def test_every_error_derives_from_dexport_error(cls):
 
 def test_dexport_error_is_an_exception():
     assert issubclass(DexportError, Exception)
+
+
+@pytest.mark.parametrize(
+    "cls", [LauncherError, SessionError, HeaderCaptureError, RateLimitError, ResolveError]
+)
+def test_simple_errors_carry_their_message(cls):
+    with pytest.raises(DexportError, match="something broke"):
+        raise cls("something broke")
+
+
+def test_api_error_caught_as_dexport_error():
+    with pytest.raises(DexportError) as exc:
+        raise ApiError(404, {"message": "Unknown Channel"})
+    assert isinstance(exc.value, ApiError)
+    assert exc.value.status == 404
+
+
+def test_rate_limit_and_api_errors_are_distinct():
+    # ApiCore raises one or the other; callers must be able to tell them apart.
+    assert not issubclass(RateLimitError, ApiError)
+    assert not issubclass(ApiError, RateLimitError)
