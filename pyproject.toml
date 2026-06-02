@@ -14,13 +14,26 @@ dependencies = [
     "playwright>=1.40",
     "typer>=0.12",
     "rich>=13.0",
+    "rapidfuzz>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.16",
+    "mypy>=1.14",
 ]
 
 [project.scripts]
 dexport = "dexport.cli:app"
 
 [tool.setuptools]
-packages = ["dexport"]
+packages = ["dexport", "dexport.cli", "dexport.launcher"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
 
 [tool.ruff]
 line-length = 100
