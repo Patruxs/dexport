@@ -42,3 +42,21 @@ def dexport_home(tmp_path, monkeypatch):
 def resp(status: int, body: str = "", headers: dict[str, str] | None = None, error=None) -> dict:
     """Build a raw fetch result exactly as ``_FETCH_JS`` would return it."""
     return {"status": status, "body": body, "headers": headers or {}, "error": error}
+
+
+def json_resp(status: int, payload: Any, headers: dict[str, str] | None = None) -> dict:
+    return resp(status, json.dumps(payload), headers)
+
+
+class FakeSession:
+    """Stands in for a CDP session; returns queued fetch results in order."""
+
+    def __init__(self, responses=()):
+        self._responses = list(responses)
+        self.calls: list[dict] = []
+
+    def evaluate(self, expression, arg=None):
+        self.calls.append(arg)
+        if not self._responses:
+            raise AssertionError("no more fake responses")
+        return self._responses.pop(0)
