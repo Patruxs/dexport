@@ -237,3 +237,26 @@ def test_pick_app_page_falls_back_to_a_low_scoring_discord_page():
     # Only an overlay renderer is open: better to attach to it than to nothing.
     overlay = _Page("https://discord.com/overlay")
     assert pick_app_page([_Page("about:blank"), overlay]) is overlay
+
+
+def test_pick_app_page_prefers_first_of_equal_scores():
+    first = _Page("https://discord.com/channels/1/2")
+    second = _Page("https://discord.com/channels/3/4")
+    assert pick_app_page([first, second]) is first
+
+
+@pytest.mark.parametrize(
+    "pages",
+    [
+        [],
+        [_Page("chrome://x"), _Page("about:blank")],
+        [_ClosingPage()],
+    ],
+)
+def test_pick_app_page_returns_none_when_no_discord_page(pages):
+    assert pick_app_page(pages) is None
+
+
+def test_pick_app_page_accepts_any_iterable():
+    real = _Page("https://discord.com/channels/@me")
+    assert pick_app_page(p for p in [_Page("about:blank"), real]) is real
