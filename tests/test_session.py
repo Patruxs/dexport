@@ -212,3 +212,28 @@ def test_score_page_prefers_channels_over_app_over_root_over_overlay():
 )
 def test_score_page_penalises_non_app_renderers_below_root(url):
     assert score_page(url) < score_page("https://discord.com/")
+
+
+def test_pick_app_page_returns_highest_scoring_discord_page():
+    app = _Page("https://discord.com/app")
+    channels = _Page("https://discord.com/channels/1/2")
+    overlay = _Page("https://discord.com/overlay")
+    other = _Page("chrome://gpu")
+    assert pick_app_page([app, overlay, channels, other]) is channels
+
+
+def test_pick_app_page_ignores_non_discord_pages_even_if_they_look_like_the_app():
+    decoy = _Page("https://example.com/channels/1/2")
+    real = _Page("https://discord.com/app")
+    assert pick_app_page([decoy, real]) is real
+
+
+def test_pick_app_page_skips_pages_whose_url_raises():
+    real = _Page("https://discord.com/app")
+    assert pick_app_page([_ClosingPage(), real, _ClosingPage()]) is real
+
+
+def test_pick_app_page_falls_back_to_a_low_scoring_discord_page():
+    # Only an overlay renderer is open: better to attach to it than to nothing.
+    overlay = _Page("https://discord.com/overlay")
+    assert pick_app_page([_Page("about:blank"), overlay]) is overlay
