@@ -267,3 +267,24 @@ def test_linux_skips_versioned_dir_without_binary(linux):
     (config_home / "discord" / "app-1.0.10000").mkdir(parents=True)  # update in progress
     old = touch(config_home / "discord" / "app-1.0.9000" / "Discord")
     assert find() == [old]
+
+
+def test_linux_defaults_config_home_to_dot_config(linux):
+    config_home, find = linux
+    exe = touch(config_home / "discord" / "app-1.0.1" / "Discord")
+    assert find(env={}) == [exe]
+
+
+def test_linux_lists_ptb_and_canary_after_stable(linux):
+    config_home, find = linux
+    canary = touch(config_home / "discordcanary" / "app-1.0.1" / "DiscordCanary")
+    ptb = touch(config_home / "discordptb" / "app-1.0.1" / "DiscordPTB")
+    stable = touch(config_home / "discord" / "app-1.0.1" / "Discord")
+    assert find() == [stable, ptb, canary]
+
+
+def test_linux_includes_local_share_fallback_after_user_install(sandbox, linux):
+    config_home, find = linux
+    stable = touch(config_home / "discord" / "app-1.0.1" / "Discord")
+    fallback = touch(sandbox / ".local" / "share" / "discord" / "Discord")
+    assert find() == [stable, fallback]
