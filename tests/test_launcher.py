@@ -288,3 +288,52 @@ def test_linux_includes_local_share_fallback_after_user_install(sandbox, linux):
     stable = touch(config_home / "discord" / "app-1.0.1" / "Discord")
     fallback = touch(sandbox / ".local" / "share" / "discord" / "Discord")
     assert find() == [stable, fallback]
+
+
+def test_linux_includes_binary_found_on_path(sandbox, linux, monkeypatch):
+    _, find = linux
+    on_path = touch(sandbox / "bin" / "discord")
+    monkeypatch.setattr(
+        shutil, "which", lambda name, *_a, **_k: str(on_path) if name == "discord" else None
+    )
+    assert find() == [on_path]
+
+
+def test_linux_deduplicates_path_lookup_already_listed(sandbox, linux, monkeypatch):
+    _, find = linux
+    fallback = touch(sandbox / ".local" / "share" / "discord" / "Discord")
+    monkeypatch.setattr(shutil, "which", lambda *_a, **_k: str(fallback))
+    assert find() == [fallback]
+
+
+def test_linux_without_any_install_returns_empty(linux):
+    _, find = linux
+    assert find() == []
+
+
+@pytest.mark.parametrize(
+    ("probe", "expect_flatpak"),
+    [
+        pytest.param(lambda args: subprocess.CompletedProcess(args, 0), True, id="installed"),
+        pytest.param(lambda args: subprocess.CompletedProcess(args, 1), False, id="absent"),
+        pytest.param(raiser(subprocess.TimeoutExpired("flatpak", 5)), False, id="probe-hangs"),
+    ],
+)
+def test_linux_flatpak_probe(linux, monkeypatch, probe, expect_flatpak):
+    config_home, find = linux
+    stable = touch(config_home / "discord" / "app-1.0.1" / "Discord")
+    monkeypatch.setattr(
+        shutil, "which", lambda name, *_a, **_k: "/usr/bin/flatpak" if name == "flatpak" else None
+    )
+    probes: list[list[str]] = []
+
+    def fake_run(args, **_kwargs):
+        probes.append(list(args))
+        return probe(args)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    found = find(probe_flatpak=True)
+
+    assert probes == [["/usr/bin/flatpak", "info", FLATPAK_APP_ID]]
+    assert found == ([stable, FLATPAK_TARGET] if expect_flatpak else [stable])
