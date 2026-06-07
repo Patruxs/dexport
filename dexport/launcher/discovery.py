@@ -55,3 +55,23 @@ def _newest_versioned(base: Path, exe_name: str) -> list[Path]:
         if exe.exists():
             out.append(exe)
     return out
+
+
+def _windows_candidates(home: Path, env: Mapping[str, str]) -> list[Path]:
+    local = env.get("LOCALAPPDATA", str(home / "AppData" / "Local"))
+    base = Path(local) / "Discord"
+    # Prefer the newest versioned app-*/Discord.exe, else the Update.exe stub.
+    out = _newest_versioned(base, "Discord.exe")
+    update = base / "Update.exe"
+    if update.exists():
+        out.append(update)
+    return out
+
+
+def _macos_candidates(home: Path) -> list[Path]:
+    out = []
+    for root in (Path("/Applications"), home / "Applications"):
+        exe = root / "Discord.app" / "Contents" / "MacOS" / "Discord"
+        if exe.exists():
+            out.append(exe)
+    return out
