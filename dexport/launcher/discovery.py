@@ -75,3 +75,78 @@ def _macos_candidates(home: Path) -> list[Path]:
         if exe.exists():
             out.append(exe)
     return out
+
+
+def _linux_candidates(home: Path, env: Mapping[str, str], *, probe_flatpak: bool) -> list[Path]:
+    # Discord's Linux updater installs the *real* binary under the user's
+    # config dir (e.g. ~/.config/discord/app-1.0.155/Discord). Prefer it:
+    # the /usr/bin/discord launcher is a bootstrap shell script that goes
+    # through an updater (and a zenity dialog when detached), which does not
+    # reliably pass --remote-debugging-port through to the app.
+    config_home = Path(env.get("XDG_CONFIG_HOME", str(home / ".config")))
+    out: list[Path] = []
+    for app_dir_name, exe_name in _LINUX_USER_INSTALLS:
+        out.extend(_newest_versioned(config_home / app_dir_name, exe_name))
+    # System install locations and the wrapper (bootstrap) as fallbacks.
+    for cand in (
+        *_LINUX_SYSTEM_PATHS,
+        home / ".local" / "share" / "discord" / "Discord",
+        Path("/usr/bin/discord"),
+        Path("/usr/local/bin/discord"),
+    ):
+        if cand.exists():
+            out.append(cand)
+    which = shutil.which("discord") or shutil.which("Discord")
+    if which:
+        out.append(Path(which))
+    if probe_flatpak:
+        flatpak = shutil.which("flatpak")
+        if flatpak and _flatpak_has_discord(flatpak):
+            out.append(Path(FLATPAK_PREFIX + FLATPAK_APP_ID))
+    return out
+
+
+def candidate_paths(
+    *,
+    system: str | None = None,
+    home: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    probe_flatpak: bool = True,
+) -> list[Path]:
+    """Plausible Discord launch targets for this machine, best first.
+
+    ``system``/``home``/``env`` default to the real platform, home dir and
+    environment; tests pass fakes.
+    """
+    system = system or platform.system()
+    home = home or Path.home()
+    env = os.environ if env is None else env
+
+    if system == "Windows":
+        found = _windows_candidates(home, env)
+    elif system == "Darwin":
+        found = _macos_candidates(home)
+    else:  # Linux / *nix
+        found = _linux_candidates(home, env, probe_flatpak=probe_flatpak)
+
+    # De-duplicate, preserving order.
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for p in found:
+        key = str(p)
+        if key not in seen:
+            seen.add(key)
+            unique.append(p)
+    return unique
+
+
+def _flatpak_has_discord(flatpak: str) -> bool:
+    try:
+        res = subprocess.run(
+            [flatpak, "info", FLATPAK_APP_ID],
+            capture_output=True,
+            timeout=5,
+        )
+        return res.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
