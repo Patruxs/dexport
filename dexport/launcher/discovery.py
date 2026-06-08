@@ -150,3 +150,36 @@ def _flatpak_has_discord(flatpak: str) -> bool:
         return res.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def find_discord_binary(override: str | None = None) -> Path:
+    """Return the best Discord launch target, or raise :class:`LauncherError`."""
+    if override:
+        p = Path(override)
+        if not str(p).startswith(FLATPAK_PREFIX) and not p.exists():
+            raise LauncherError(f"Configured Discord binary does not exist: {override}")
+        return p
+    candidates = candidate_paths()
+    if not candidates:
+        raise LauncherError(
+            "Could not find the Discord desktop client. Install it, or set "
+            'the binary path in ~/.dexport/config.json ("discord_binary") or '
+            "the DEXPORT_DISCORD_BINARY environment variable."
+        )
+    return candidates[0]
+
+
+def launch_command(binary: Path, port: int) -> list[str]:
+    """Build the argv to start Discord with remote debugging enabled."""
+    flag = f"--remote-debugging-port={port}"
+    text = str(binary)
+
+    if text.startswith(FLATPAK_PREFIX):
+        app_id = text.split(":", 1)[1]
+        return ["flatpak", "run", app_id, flag]
+
+    if binary.name.lower() == "update.exe":
+        # Windows stub launcher: pass args through to the real Discord.exe.
+        return [text, "--processStart", "Discord.exe", "--process-start-args", flag]
+
+    return [text, flag]
