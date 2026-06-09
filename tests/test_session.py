@@ -243,3 +243,77 @@ def test_pick_app_page_prefers_first_of_equal_scores():
     first = _Page("https://discord.com/channels/1/2")
     second = _Page("https://discord.com/channels/3/4")
     assert pick_app_page([first, second]) is first
+
+
+@pytest.mark.parametrize(
+    "pages",
+    [
+        [],
+        [_Page("chrome://x"), _Page("about:blank")],
+        [_ClosingPage()],
+    ],
+)
+def test_pick_app_page_returns_none_when_no_discord_page(pages):
+    assert pick_app_page(pages) is None
+
+
+def test_pick_app_page_accepts_any_iterable():
+    real = _Page("https://discord.com/channels/@me")
+    assert pick_app_page(p for p in [_Page("about:blank"), real]) is real
+
+
+# --------------------------------------------------------------------------
+# Session.evaluate
+# --------------------------------------------------------------------------
+
+
+def test_evaluate_forwards_expression_and_arg_and_returns_result():
+    page = FakePage(evaluate_result={"status": 200})
+    session = Session(None, None, page)
+    out = session.evaluate("async (x) => x", {"a": 1})
+    assert out == {"status": 200}
+    assert page.evaluate_calls == [("async (x) => x", {"a": 1})]
+
+
+def test_evaluate_defaults_arg_to_none():
+    page = FakePage(evaluate_result=42)
+    assert Session(None, None, page).evaluate("1 + 41") == 42
+    assert page.evaluate_calls == [("1 + 41", None)]
+
+
+def test_evaluate_wraps_page_errors_in_session_error():
+    page = FakePage(evaluate_error=RuntimeError("Execution context was destroyed"))
+    with pytest.raises(SessionError, match="Execution context was destroyed") as exc:
+        Session(None, None, page).evaluate("1")
+    assert isinstance(exc.value.__cause__, RuntimeError)
+
+
+# --------------------------------------------------------------------------
+# Session.wait_for_request
+# --------------------------------------------------------------------------
+
+
+def test_wait_for_request_returns_lowercased_headers_of_matching_request():
+    req = FakeRequest(
+        "https://discord.com/api/v9/users/@me",
+        {"authorization": "tok"},
+        all_headers={"Authorization": "tok", "X-Super-Properties": "abc"},
+    )
+    page = FakePage(requests=[req])
+    out = Session(None, None, page).wait_for_request(_any_request, timeout=1.0)
+    assert out == {"authorization": "tok", "x-super-properties": "abc"}
+
+
+def test_wait_for_request_passes_url_and_headers_to_predicate():
+    seen: list[tuple[str, dict[str, str]]] = []
+
+    def predicate(url: str, headers: dict[str, str]) -> bool:
+        seen.append((url, headers))
+        return url.endswith("/users/@me")
+
+    asset = FakeRequest("https://discord.com/assets/app.js", {"accept": "*/*"})
+    api = _api_request()
+    page = FakePage(requests=[asset, api])
+    out = Session(None, None, page).wait_for_request(predicate, timeout=1.0)
+    assert out == api.headers
+    assert seen == [(asset.url, asset.headers), (api.url, api.headers)]
