@@ -367,3 +367,38 @@ def test_windows_defaults_localappdata_under_home(sandbox):
     home = sandbox / "home"
     exe = touch(home / "AppData" / "Local" / "Discord" / "app-1.0.5" / "Discord.exe")
     assert candidate_paths(system="Windows", home=home, env={}) == [exe]
+
+
+def test_darwin_finds_user_applications_bundle(sandbox):
+    exe = touch(sandbox / "Applications" / "Discord.app" / "Contents" / "MacOS" / "Discord")
+    assert candidate_paths(system="Darwin", home=sandbox) == [exe]
+
+
+def test_darwin_without_bundle_returns_empty(sandbox):
+    assert candidate_paths(system="Darwin", home=sandbox) == []
+
+
+# --------------------------------------------------------------------------
+# discovery.launch_command
+# --------------------------------------------------------------------------
+
+
+def test_launch_command_flatpak_runs_app_id():
+    assert launch_command(FLATPAK_TARGET, 9222) == [
+        "flatpak",
+        "run",
+        "com.discordapp.Discord",
+        "--remote-debugging-port=9222",
+    ]
+
+
+@pytest.mark.parametrize("stub_name", ["Update.exe", "update.exe", "UPDATE.EXE"])
+def test_launch_command_windows_update_stub_forwards_flag(stub_name):
+    stub = Path("C:/Users/me/AppData/Local/Discord") / stub_name
+    assert launch_command(stub, 9333) == [
+        str(stub),
+        "--processStart",
+        "Discord.exe",
+        "--process-start-args",
+        "--remote-debugging-port=9333",
+    ]
