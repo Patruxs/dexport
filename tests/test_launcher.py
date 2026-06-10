@@ -402,3 +402,26 @@ def test_launch_command_windows_update_stub_forwards_flag(stub_name):
         "--process-start-args",
         "--remote-debugging-port=9333",
     ]
+
+
+def test_launch_command_plain_binary():
+    assert launch_command(Path("/opt/discord/Discord"), 9222) == [
+        "/opt/discord/Discord",
+        "--remote-debugging-port=9222",
+    ]
+
+
+# --------------------------------------------------------------------------
+# discovery.find_discord_binary
+# --------------------------------------------------------------------------
+
+
+def test_find_discord_binary_rejects_missing_override(tmp_path):
+    missing = tmp_path / "nope" / "Discord"
+    with pytest.raises(LauncherError) as exc_info:
+        find_discord_binary(str(missing))
+    assert str(missing) in str(exc_info.value)
+
+
+def test_find_discord_binary_accepts_flatpak_override_without_existence_check():
+    assert find_discord_binary(str(FLATPAK_TARGET)) == FLATPAK_TARGET
