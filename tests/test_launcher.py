@@ -337,3 +337,33 @@ def test_linux_flatpak_probe(linux, monkeypatch, probe, expect_flatpak):
 
     assert probes == [["/usr/bin/flatpak", "info", FLATPAK_APP_ID]]
     assert found == ([stable, FLATPAK_TARGET] if expect_flatpak else [stable])
+
+
+def test_linux_probe_flatpak_false_spawns_nothing(linux, monkeypatch):
+    _, find = linux
+    monkeypatch.setattr(
+        shutil, "which", lambda name, *_a, **_k: "/usr/bin/flatpak" if name == "flatpak" else None
+    )
+    monkeypatch.setattr(subprocess, "run", raiser(AssertionError("must not spawn flatpak")))
+    assert find(probe_flatpak=False) == []
+
+
+# --------------------------------------------------------------------------
+# discovery.candidate_paths — Windows / macOS
+# --------------------------------------------------------------------------
+
+
+def test_windows_prefers_versioned_exe_then_update_stub(sandbox):
+    local = sandbox / "Local"
+    update = touch(local / "Discord" / "Update.exe")
+    exe = touch(local / "Discord" / "app-1.0.5" / "Discord.exe")
+    found = candidate_paths(
+        system="Windows", home=sandbox / "home", env={"LOCALAPPDATA": str(local)}
+    )
+    assert found == [exe, update]
+
+
+def test_windows_defaults_localappdata_under_home(sandbox):
+    home = sandbox / "home"
+    exe = touch(home / "AppData" / "Local" / "Discord" / "app-1.0.5" / "Discord.exe")
+    assert candidate_paths(system="Windows", home=home, env={}) == [exe]
