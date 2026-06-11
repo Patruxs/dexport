@@ -304,3 +304,101 @@ def test_linux_deduplicates_path_lookup_already_listed(sandbox, linux, monkeypat
     fallback = touch(sandbox / ".local" / "share" / "discord" / "Discord")
     monkeypatch.setattr(shutil, "which", lambda *_a, **_k: str(fallback))
     assert find() == [fallback]
+
+
+def test_linux_without_any_install_returns_empty(linux):
+    _, find = linux
+    assert find() == []
+
+
+@pytest.mark.parametrize(
+    ("probe", "expect_flatpak"),
+    [
+        pytest.param(lambda args: subprocess.CompletedProcess(args, 0), True, id="installed"),
+        pytest.param(lambda args: subprocess.CompletedProcess(args, 1), False, id="absent"),
+        pytest.param(raiser(subprocess.TimeoutExpired("flatpak", 5)), False, id="probe-hangs"),
+    ],
+)
+def test_linux_flatpak_probe(linux, monkeypatch, probe, expect_flatpak):
+    config_home, find = linux
+    stable = touch(config_home / "discord" / "app-1.0.1" / "Discord")
+    monkeypatch.setattr(
+        shutil, "which", lambda name, *_a, **_k: "/usr/bin/flatpak" if name == "flatpak" else None
+    )
+    probes: list[list[str]] = []
+
+    def fake_run(args, **_kwargs):
+        probes.append(list(args))
+        return probe(args)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    found = find(probe_flatpak=True)
+
+    assert probes == [["/usr/bin/flatpak", "info", FLATPAK_APP_ID]]
+    assert found == ([stable, FLATPAK_TARGET] if expect_flatpak else [stable])
+
+
+def test_linux_probe_flatpak_false_spawns_nothing(linux, monkeypatch):
+    _, find = linux
+    monkeypatch.setattr(
+        shutil, "which", lambda name, *_a, **_k: "/usr/bin/flatpak" if name == "flatpak" else None
+    )
+    monkeypatch.setattr(subprocess, "run", raiser(AssertionError("must not spawn flatpak")))
+    assert find(probe_flatpak=False) == []
+
+
+# --------------------------------------------------------------------------
+# discovery.candidate_paths — Windows / macOS
+# --------------------------------------------------------------------------
+
+
+def test_windows_prefers_versioned_exe_then_update_stub(sandbox):
+    local = sandbox / "Local"
+    update = touch(local / "Discord" / "Update.exe")
+    exe = touch(local / "Discord" / "app-1.0.5" / "Discord.exe")
+    found = candidate_paths(
+        system="Windows", home=sandbox / "home", env={"LOCALAPPDATA": str(local)}
+    )
+    assert found == [exe, update]
+
+
+def test_windows_defaults_localappdata_under_home(sandbox):
+    home = sandbox / "home"
+    exe = touch(home / "AppData" / "Local" / "Discord" / "app-1.0.5" / "Discord.exe")
+    assert candidate_paths(system="Windows", home=home, env={}) == [exe]
+
+
+def test_darwin_finds_user_applications_bundle(sandbox):
+    exe = touch(sandbox / "Applications" / "Discord.app" / "Contents" / "MacOS" / "Discord")
+    assert candidate_paths(system="Darwin", home=sandbox) == [exe]
+
+
+def test_darwin_without_bundle_returns_empty(sandbox):
+    assert candidate_paths(system="Darwin", home=sandbox) == []
+
+
+# --------------------------------------------------------------------------
+# discovery.launch_command
+# --------------------------------------------------------------------------
+
+
+def test_launch_command_flatpak_runs_app_id():
+    assert launch_command(FLATPAK_TARGET, 9222) == [
+        "flatpak",
+        "run",
+        "com.discordapp.Discord",
+        "--remote-debugging-port=9222",
+    ]
+
+
+@pytest.mark.parametrize("stub_name", ["Update.exe", "update.exe", "UPDATE.EXE"])
+def test_launch_command_windows_update_stub_forwards_flag(stub_name):
+    stub = Path("C:/Users/me/AppData/Local/Discord") / stub_name
+    assert launch_command(stub, 9333) == [
+        str(stub),
+        "--processStart",
+        "Discord.exe",
+        "--process-start-args",
+        "--remote-debugging-port=9333",
+    ]
