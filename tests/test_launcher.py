@@ -459,3 +459,45 @@ def test_launch_discord_unix_detaches_into_new_session(popen_calls):
     assert kwargs["start_new_session"] is True
     assert "creationflags" not in kwargs
     assert {kwargs["stdin"], kwargs["stdout"], kwargs["stderr"]} == {subprocess.DEVNULL}
+
+
+def test_launch_discord_windows_uses_detached_creation_flags(popen_calls):
+    exe = Path("C:/Users/me/AppData/Local/Discord/app-1.0.5/Discord.exe")
+    launch_discord(exe, PORT, system="Windows")
+
+    assert len(popen_calls) == 1
+    cmd, kwargs = popen_calls[0]
+    assert cmd == [str(exe), f"--remote-debugging-port={PORT}"]
+    assert kwargs["creationflags"] & DETACHED_PROCESS
+    assert kwargs["creationflags"] & CREATE_NEW_PROCESS_GROUP
+    assert "start_new_session" not in kwargs
+    assert {kwargs["stdin"], kwargs["stdout"], kwargs["stderr"]} == {subprocess.DEVNULL}
+
+
+def test_launch_discord_wraps_os_error_in_launcher_error(monkeypatch):
+    cause = FileNotFoundError(2, "No such file or directory")
+    monkeypatch.setattr(subprocess, "Popen", raiser(cause))
+
+    with pytest.raises(LauncherError) as exc_info:
+        launch_discord(FAKE_BINARY, PORT, system="Linux")
+
+    assert str(FAKE_BINARY) in str(exc_info.value)
+    assert "No such file or directory" in str(exc_info.value)
+    assert exc_info.value.__cause__ is cause
+
+
+# --------------------------------------------------------------------------
+# process.discord_pids / is_discord_running
+# --------------------------------------------------------------------------
+
+
+def test_discord_pids_merges_queries_and_excludes_own_process(monkeypatch):
+    me, parent = os.getpid(), os.getppid()
+
+    def run(args, timeout=10):
+        if "-x" in args:  # exact-name query
+            return subprocess.CompletedProcess(args, 0, f"{PID_A}\n{PID_B}\n{me}\n", "")
+        return subprocess.CompletedProcess(args, 0, f"{PID_B}\n{PID_C}\n{parent}\nnot-a-pid\n", "")
+
+    monkeypatch.setattr(process, "_run", run)
+    assert discord_pids() == {PID_A, PID_B, PID_C}
