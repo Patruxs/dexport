@@ -501,3 +501,48 @@ def test_discord_pids_merges_queries_and_excludes_own_process(monkeypatch):
 
     monkeypatch.setattr(process, "_run", run)
     assert discord_pids() == {PID_A, PID_B, PID_C}
+
+
+def test_discord_pids_tolerates_one_failing_query(monkeypatch):
+    def run(args, timeout=10):
+        if "-f" in args:
+            return None  # e.g. pgrep timed out
+        return subprocess.CompletedProcess(args, 0, f"{PID_A}\n", "")
+
+    monkeypatch.setattr(process, "_run", run)
+    assert discord_pids() == {PID_A}
+
+
+@pytest.mark.parametrize("system", ["Linux", "Windows"])
+def test_is_discord_running_false_when_process_tools_unavailable(monkeypatch, system):
+    monkeypatch.setattr(process, "_run", lambda *_a, **_k: None)
+    assert discord_pids() == set()
+    assert is_discord_running(system=system) is False
+
+
+@pytest.mark.parametrize("system", ["Linux", "Windows"])
+def test_is_discord_running_reflects_process_table(process_table, system):
+    table = process_table({PID_A})
+    assert is_discord_running(system=system) is True
+    table.live.clear()
+    assert is_discord_running(system=system) is False
+    # Windows has no pgrep; Unix has no tasklist.
+    tools = {cmd[0] for cmd in table.commands}
+    assert tools == ({"tasklist"} if system == "Windows" else {"pgrep"})
+
+
+# --------------------------------------------------------------------------
+# process.kill_discord
+# --------------------------------------------------------------------------
+
+
+def test_kill_discord_sigterms_everything_then_sigkills_survivors(process_table):
+    table = process_table({PID_A, PID_B}, stubborn={PID_B})
+
+    kill_discord(system="Linux", grace=5.0)
+
+    assert table.live == set()
+    assert table.sent(signal.SIGTERM) == {PID_A, PID_B}
+    assert table.sent(signal.SIGKILL) == {PID_B}
+    assert [sig for _, sig in table.signals] == [signal.SIGTERM, signal.SIGTERM, signal.SIGKILL]
+    assert table.clock.elapsed >= 5.0  # escalated only after the grace period
