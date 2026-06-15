@@ -402,3 +402,102 @@ def test_launch_command_windows_update_stub_forwards_flag(stub_name):
         "--process-start-args",
         "--remote-debugging-port=9333",
     ]
+
+
+def test_launch_command_plain_binary():
+    assert launch_command(Path("/opt/discord/Discord"), 9222) == [
+        "/opt/discord/Discord",
+        "--remote-debugging-port=9222",
+    ]
+
+
+# --------------------------------------------------------------------------
+# discovery.find_discord_binary
+# --------------------------------------------------------------------------
+
+
+def test_find_discord_binary_rejects_missing_override(tmp_path):
+    missing = tmp_path / "nope" / "Discord"
+    with pytest.raises(LauncherError) as exc_info:
+        find_discord_binary(str(missing))
+    assert str(missing) in str(exc_info.value)
+
+
+def test_find_discord_binary_accepts_flatpak_override_without_existence_check():
+    assert find_discord_binary(str(FLATPAK_TARGET)) == FLATPAK_TARGET
+
+
+def test_find_discord_binary_returns_existing_override(tmp_path):
+    exe = touch(tmp_path / "Discord")
+    assert find_discord_binary(str(exe)) == exe
+
+
+@pytest.mark.parametrize("override", [None, ""], ids=["none", "empty"])
+def test_find_discord_binary_without_candidates_points_at_env_var(monkeypatch, override):
+    monkeypatch.setattr(discovery, "candidate_paths", lambda **_kwargs: [])
+    with pytest.raises(LauncherError, match="DEXPORT_DISCORD_BINARY"):
+        find_discord_binary(override)
+
+
+def test_find_discord_binary_returns_best_candidate(monkeypatch):
+    best, other = Path("/a/Discord"), Path("/b/Discord")
+    monkeypatch.setattr(discovery, "candidate_paths", lambda **_kwargs: [best, other])
+    assert find_discord_binary() == best
+
+
+# --------------------------------------------------------------------------
+# process.launch_discord
+# --------------------------------------------------------------------------
+
+
+def test_launch_discord_unix_detaches_into_new_session(popen_calls):
+    launch_discord(FAKE_BINARY, PORT, system="Linux")
+
+    assert len(popen_calls) == 1
+    cmd, kwargs = popen_calls[0]
+    assert cmd == [str(FAKE_BINARY), f"--remote-debugging-port={PORT}"]
+    assert kwargs["start_new_session"] is True
+    assert "creationflags" not in kwargs
+    assert {kwargs["stdin"], kwargs["stdout"], kwargs["stderr"]} == {subprocess.DEVNULL}
+
+
+def test_launch_discord_windows_uses_detached_creation_flags(popen_calls):
+    exe = Path("C:/Users/me/AppData/Local/Discord/app-1.0.5/Discord.exe")
+    launch_discord(exe, PORT, system="Windows")
+
+    assert len(popen_calls) == 1
+    cmd, kwargs = popen_calls[0]
+    assert cmd == [str(exe), f"--remote-debugging-port={PORT}"]
+    assert kwargs["creationflags"] & DETACHED_PROCESS
+    assert kwargs["creationflags"] & CREATE_NEW_PROCESS_GROUP
+    assert "start_new_session" not in kwargs
+    assert {kwargs["stdin"], kwargs["stdout"], kwargs["stderr"]} == {subprocess.DEVNULL}
+
+
+def test_launch_discord_wraps_os_error_in_launcher_error(monkeypatch):
+    cause = FileNotFoundError(2, "No such file or directory")
+    monkeypatch.setattr(subprocess, "Popen", raiser(cause))
+
+    with pytest.raises(LauncherError) as exc_info:
+        launch_discord(FAKE_BINARY, PORT, system="Linux")
+
+    assert str(FAKE_BINARY) in str(exc_info.value)
+    assert "No such file or directory" in str(exc_info.value)
+    assert exc_info.value.__cause__ is cause
+
+
+# --------------------------------------------------------------------------
+# process.discord_pids / is_discord_running
+# --------------------------------------------------------------------------
+
+
+def test_discord_pids_merges_queries_and_excludes_own_process(monkeypatch):
+    me, parent = os.getpid(), os.getppid()
+
+    def run(args, timeout=10):
+        if "-x" in args:  # exact-name query
+            return subprocess.CompletedProcess(args, 0, f"{PID_A}\n{PID_B}\n{me}\n", "")
+        return subprocess.CompletedProcess(args, 0, f"{PID_B}\n{PID_C}\n{parent}\nnot-a-pid\n", "")
+
+    monkeypatch.setattr(process, "_run", run)
+    assert discord_pids() == {PID_A, PID_B, PID_C}
