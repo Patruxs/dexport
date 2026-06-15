@@ -546,3 +546,30 @@ def test_kill_discord_sigterms_everything_then_sigkills_survivors(process_table)
     assert table.sent(signal.SIGKILL) == {PID_B}
     assert [sig for _, sig in table.signals] == [signal.SIGTERM, signal.SIGTERM, signal.SIGKILL]
     assert table.clock.elapsed >= 5.0  # escalated only after the grace period
+
+
+def test_kill_discord_returns_as_soon_as_processes_exit(process_table):
+    table = process_table({PID_A, PID_B})
+
+    kill_discord(system="Linux", grace=5.0)
+
+    assert table.live == set()
+    assert table.sent(signal.SIGKILL) == set()
+    assert table.clock.sleeps == []  # gone on the first re-check: no waiting
+
+
+def test_kill_discord_with_zero_grace_escalates_without_sleeping(process_table):
+    table = process_table({PID_A, PID_B}, stubborn={PID_B})
+
+    kill_discord(system="Linux", grace=0)
+
+    assert table.live == set()
+    assert table.sent(signal.SIGKILL) == {PID_B}
+    assert table.clock.sleeps == []
+
+
+def test_kill_discord_without_processes_signals_nothing(process_table):
+    table = process_table()
+    kill_discord(system="Linux", grace=5.0)
+    assert table.signals == []
+    assert table.clock.sleeps == []
