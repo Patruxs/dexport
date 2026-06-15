@@ -573,3 +573,53 @@ def test_kill_discord_without_processes_signals_nothing(process_table):
     kill_discord(system="Linux", grace=5.0)
     assert table.signals == []
     assert table.clock.sleeps == []
+
+
+def test_kill_discord_keeps_going_when_a_pid_cannot_be_signalled(process_table, monkeypatch):
+    table = process_table({PID_A, PID_B})
+    table_kill = table.kill
+
+    def kill(pid, sig):
+        if pid == PID_A:
+            raise PermissionError(1, "Operation not permitted")
+        table_kill(pid, sig)
+
+    monkeypatch.setattr(os, "kill", kill)
+
+    kill_discord(system="Linux", grace=1.0)  # must not raise
+
+    assert PID_B not in table.live
+
+
+def test_kill_discord_windows_uses_taskkill(process_table):
+    table = process_table({PID_A})
+
+    kill_discord(system="Windows")
+
+    assert table.signals == []
+    assert len(table.commands) == 1
+    assert table.commands[0][0] == "taskkill"
+    assert "Discord.exe" in table.commands[0]
+    assert table.live == set()
+
+
+# --------------------------------------------------------------------------
+# is_cdp_alive / cdp_http
+# --------------------------------------------------------------------------
+
+
+def test_cdp_http_builds_loopback_url():
+    assert cdp_http(9222) == "http://127.0.0.1:9222"
+
+
+def test_is_cdp_alive_probes_json_version_and_accepts_200(monkeypatch):
+    requests: list[tuple[str, float | None]] = []
+
+    def fake_urlopen(url, timeout=None):
+        requests.append((url, timeout))
+        return FakeHttpResponse(200)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    assert is_cdp_alive(9333, timeout=0.25) is True
+    assert requests == [("http://127.0.0.1:9333/json/version", 0.25)]
