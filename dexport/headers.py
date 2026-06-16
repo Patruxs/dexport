@@ -74,3 +74,47 @@ def sanitize_headers(raw: dict[str, str]) -> dict[str, str]:
             continue
         out[lk] = value
     return out
+
+
+def looks_like_api_request(url: str, headers: dict[str, str]) -> bool:
+    """True for an ``/api/v*`` request that carries an Authorization header."""
+    if "/api/v" not in url:
+        return False
+    # Header keys from Playwright are already lower-cased.
+    return bool(headers.get("authorization"))
+
+
+def capture_headers(
+    session: RequestWatcher,
+    *,
+    passive_timeout: float = 6.0,
+    reload_timeout: float = 30.0,
+) -> dict[str, str]:
+    """Snapshot the client's authorized request headers.
+
+    First we listen passively for a few seconds (Discord makes background API
+    calls constantly). If nothing shows up, we reload the page to force a burst
+    of authorized requests and listen again.
+    """
+    raw = session.wait_for_request(looks_like_api_request, timeout=passive_timeout)
+    if raw is None:
+        # The listener's countdown starts before the (blocking) reload, so give
+        # it a budget larger than the reload's own timeout — otherwise a
+        # slow-to-commit reload would consume the entire window and the request
+        # that fires just after commit would be missed.
+        raw = session.wait_for_request(
+            looks_like_api_request,
+            timeout=reload_timeout + passive_timeout,
+            reload=True,
+            reload_timeout=reload_timeout,
+        )
+    if raw is None:
+        raise HeaderCaptureError(
+            "Never observed an authorized /api request from Discord. Make sure "
+            "you are logged in and a channel is open, then try again."
+        )
+
+    headers = sanitize_headers(raw)
+    if not headers.get("authorization"):
+        raise HeaderCaptureError("Captured a request but it had no Authorization header.")
+    return headers
