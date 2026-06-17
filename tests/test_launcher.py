@@ -601,3 +601,94 @@ def test_kill_discord_windows_uses_taskkill(process_table):
     assert table.commands[0][0] == "taskkill"
     assert "Discord.exe" in table.commands[0]
     assert table.live == set()
+
+
+# --------------------------------------------------------------------------
+# is_cdp_alive / cdp_http
+# --------------------------------------------------------------------------
+
+
+def test_cdp_http_builds_loopback_url():
+    assert cdp_http(9222) == "http://127.0.0.1:9222"
+
+
+def test_is_cdp_alive_probes_json_version_and_accepts_200(monkeypatch):
+    requests: list[tuple[str, float | None]] = []
+
+    def fake_urlopen(url, timeout=None):
+        requests.append((url, timeout))
+        return FakeHttpResponse(200)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    assert is_cdp_alive(9333, timeout=0.25) is True
+    assert requests == [("http://127.0.0.1:9333/json/version", 0.25)]
+
+
+def test_is_cdp_alive_false_on_non_200(monkeypatch):
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=None: FakeHttpResponse(503))
+    assert is_cdp_alive(9333) is False
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [urllib.error.URLError("connection refused"), ConnectionRefusedError(), TimeoutError()],
+    ids=["urlerror", "refused", "timeout"],
+)
+def test_is_cdp_alive_false_when_endpoint_unreachable(monkeypatch, failure):
+    monkeypatch.setattr(urllib.request, "urlopen", raiser(failure))
+    assert is_cdp_alive(9333) is False
+
+
+# --------------------------------------------------------------------------
+# ensure_discord
+# --------------------------------------------------------------------------
+
+
+def test_ensure_discord_reuses_live_endpoint_without_launching(monkeypatch):
+    stubs = LauncherStubs(monkeypatch, alive=[True])
+
+    assert ensure_discord(PORT) == f"http://127.0.0.1:{PORT}"
+
+    # Nothing else is touched: works even when no binary could be discovered.
+    assert stubs.events == []
+
+
+def test_ensure_discord_launches_found_binary_and_waits_for_endpoint(monkeypatch):
+    stubs = LauncherStubs(monkeypatch, alive=[False, True])
+
+    url = ensure_discord(PORT, binary_override="/custom/Discord", wait_timeout=1, poll_interval=0)
+
+    assert url == f"http://127.0.0.1:{PORT}"
+    assert stubs.events == [("find", "/custom/Discord"), ("launch", FAKE_BINARY, PORT)]
+
+
+def test_ensure_discord_times_out_with_restart_hint(monkeypatch):
+    stubs = LauncherStubs(monkeypatch, alive=[False])
+
+    with pytest.raises(LauncherError) as exc_info:
+        ensure_discord(PORT, wait_timeout=0, poll_interval=0)
+
+    message = str(exc_info.value)
+    assert "--restart" in message
+    assert str(PORT) in message
+    assert len(stubs.launches) == 1  # it did try
+
+
+def test_ensure_discord_force_restart_refuses_to_launch_while_still_running(monkeypatch):
+    stubs = LauncherStubs(monkeypatch, alive=[False], running=True)
+
+    with pytest.raises(LauncherError, match="still running"):
+        ensure_discord(PORT, force_restart=True, wait_timeout=0, poll_interval=0)
+
+    assert ("kill",) in stubs.events
+    assert stubs.launches == []
+
+
+def test_ensure_discord_force_restart_kills_then_launches(monkeypatch):
+    stubs = LauncherStubs(monkeypatch, alive=[False, True], running=False)
+
+    url = ensure_discord(PORT, force_restart=True, wait_timeout=1, poll_interval=0)
+
+    assert url == f"http://127.0.0.1:{PORT}"
+    assert stubs.events == [("find", None), ("kill",), ("launch", FAKE_BINARY, PORT)]
