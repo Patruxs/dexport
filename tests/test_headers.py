@@ -132,3 +132,55 @@ def test_capture_passive_hit_returns_sanitised_headers_without_reload():
     assert len(watcher.calls) == 1
     assert watcher.calls[0]["reload"] is False
     assert watcher.calls[0]["timeout"] == 1.5
+
+
+def test_capture_waits_for_an_authorized_api_request():
+    watcher = FakeWatcher([RAW_AUTHORIZED])
+    capture_headers(watcher, passive_timeout=1.0)
+    predicate = watcher.calls[0]["predicate"]
+    assert predicate(API_URL, {"authorization": "tok"}) is True
+    assert predicate("https://discord.com/assets/app.js", {"authorization": "tok"}) is False
+    assert predicate(API_URL, {}) is False
+
+
+def test_capture_passive_miss_then_reload_hit():
+    watcher = FakeWatcher([None, RAW_AUTHORIZED])
+    out = capture_headers(watcher, passive_timeout=1.5, reload_timeout=4.0)
+    assert out["authorization"] == "tok"
+    assert len(watcher.calls) == 2
+    second = watcher.calls[1]
+    assert second["reload"] is True
+    assert second["reload_timeout"] == 4.0
+    # Listener budget must exceed the reload's own timeout (see headers.py).
+    assert second["timeout"] == 4.0 + 1.5
+    assert second["predicate"] is watcher.calls[0]["predicate"]
+
+
+def test_capture_both_misses_raises_with_login_hint():
+    watcher = FakeWatcher([None, None])
+    with pytest.raises(HeaderCaptureError, match="logged in"):
+        capture_headers(watcher, passive_timeout=0, reload_timeout=0)
+    assert len(watcher.calls) == 2
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"Cookie": "secret", "X-Super-Properties": "abc"},
+        {"Authorization": "", "X-Super-Properties": "abc"},
+    ],
+)
+def test_capture_request_without_authorization_raises(raw):
+    watcher = FakeWatcher([raw])
+    with pytest.raises(HeaderCaptureError, match="no Authorization"):
+        capture_headers(watcher, passive_timeout=0)
+    assert len(watcher.calls) == 1
+
+
+def test_capture_uses_default_timeouts_when_not_given():
+    watcher = FakeWatcher([None, RAW_AUTHORIZED])
+    capture_headers(watcher)
+    passive, reload = watcher.calls
+    assert passive["timeout"] > 0
+    assert reload["reload_timeout"] > passive["timeout"]
+    assert reload["timeout"] == reload["reload_timeout"] + passive["timeout"]
