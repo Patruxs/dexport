@@ -260,3 +260,29 @@ def test_pick_app_page_returns_none_when_no_discord_page(pages):
 def test_pick_app_page_accepts_any_iterable():
     real = _Page("https://discord.com/channels/@me")
     assert pick_app_page(p for p in [_Page("about:blank"), real]) is real
+
+
+# --------------------------------------------------------------------------
+# Session.evaluate
+# --------------------------------------------------------------------------
+
+
+def test_evaluate_forwards_expression_and_arg_and_returns_result():
+    page = FakePage(evaluate_result={"status": 200})
+    session = Session(None, None, page)
+    out = session.evaluate("async (x) => x", {"a": 1})
+    assert out == {"status": 200}
+    assert page.evaluate_calls == [("async (x) => x", {"a": 1})]
+
+
+def test_evaluate_defaults_arg_to_none():
+    page = FakePage(evaluate_result=42)
+    assert Session(None, None, page).evaluate("1 + 41") == 42
+    assert page.evaluate_calls == [("1 + 41", None)]
+
+
+def test_evaluate_wraps_page_errors_in_session_error():
+    page = FakePage(evaluate_error=RuntimeError("Execution context was destroyed"))
+    with pytest.raises(SessionError, match="Execution context was destroyed") as exc:
+        Session(None, None, page).evaluate("1")
+    assert isinstance(exc.value.__cause__, RuntimeError)
