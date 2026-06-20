@@ -286,3 +286,51 @@ def test_evaluate_wraps_page_errors_in_session_error():
     with pytest.raises(SessionError, match="Execution context was destroyed") as exc:
         Session(None, None, page).evaluate("1")
     assert isinstance(exc.value.__cause__, RuntimeError)
+
+
+# --------------------------------------------------------------------------
+# Session.wait_for_request
+# --------------------------------------------------------------------------
+
+
+def test_wait_for_request_returns_lowercased_headers_of_matching_request():
+    req = FakeRequest(
+        "https://discord.com/api/v9/users/@me",
+        {"authorization": "tok"},
+        all_headers={"Authorization": "tok", "X-Super-Properties": "abc"},
+    )
+    page = FakePage(requests=[req])
+    out = Session(None, None, page).wait_for_request(_any_request, timeout=1.0)
+    assert out == {"authorization": "tok", "x-super-properties": "abc"}
+
+
+def test_wait_for_request_passes_url_and_headers_to_predicate():
+    seen: list[tuple[str, dict[str, str]]] = []
+
+    def predicate(url: str, headers: dict[str, str]) -> bool:
+        seen.append((url, headers))
+        return url.endswith("/users/@me")
+
+    asset = FakeRequest("https://discord.com/assets/app.js", {"accept": "*/*"})
+    api = _api_request()
+    page = FakePage(requests=[asset, api])
+    out = Session(None, None, page).wait_for_request(predicate, timeout=1.0)
+    assert out == api.headers
+    assert seen == [(asset.url, asset.headers), (api.url, api.headers)]
+
+
+def test_wait_for_request_falls_back_to_headers_when_all_headers_fails():
+    req = FakeRequest(
+        "https://discord.com/api/v9/users/@me",
+        {"Authorization": "tok"},
+        all_headers_fails=True,
+    )
+    page = FakePage(requests=[req])
+    out = Session(None, None, page).wait_for_request(_any_request, timeout=1.0)
+    assert out == {"authorization": "tok"}
+
+
+def test_wait_for_request_timeout_is_converted_to_milliseconds():
+    page = FakePage(requests=[_api_request()])
+    Session(None, None, page).wait_for_request(_any_request, timeout=1.5)
+    assert page.expect_calls[0]["timeout"] == 1500
