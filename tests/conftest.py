@@ -123,3 +123,30 @@ class FakeApi:
 
     def me(self):
         return self.get_json("/users/@me")
+
+
+@pytest.fixture
+def fake_api():
+    return FakeApi()
+
+
+# --------------------------------------------------------------------------
+# Resolver cache fixture
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def resolver_cache():
+    return {
+        "guilds": [
+            {"id": "1", "name": "cú đêm"},
+            {"id": "2", "name": "random server"},
+        ],
+        "channels": {
+            "1": [
+                {"id": "10", "name": "lười-chat-tổng", "type": 0, "parent_id": None},
+                {"id": "11", "name": "voice-hangout", "type": 2, "parent_id": None},
+                {"id": "12", "name": "thông-báo", "type": 5, "parent_id": None},
+            ]
+        },
+    }
