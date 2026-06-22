@@ -69,3 +69,17 @@ def _check_fetch_result(raw: object) -> FetchResult:
     if not isinstance(raw, dict) or not raw.keys() >= _FETCH_RESULT_KEYS:
         raise SessionError(f"Renderer returned a malformed fetch result: {raw!r:.200}")
     return raw  # type: ignore[return-value]
+
+
+def _backoff(attempt: int) -> float:
+    """Seconds to wait before retry ``attempt`` (1-based): 2, 4, 8, then capped at 10."""
+    return float(min(2**attempt, MAX_BACKOFF))
+
+
+def build_url(path: str) -> str:
+    """Absolute URL for ``path`` (absolute URLs are passed through untouched)."""
+    if path.startswith(("http://", "https://")):
+        return path
+    if not path.startswith("/"):
+        path = "/" + path
+    return DISCORD_API_BASE + path
