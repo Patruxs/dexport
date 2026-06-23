@@ -317,3 +317,52 @@ def test_wait_for_request_passes_url_and_headers_to_predicate():
     out = Session(None, None, page).wait_for_request(predicate, timeout=1.0)
     assert out == api.headers
     assert seen == [(asset.url, asset.headers), (api.url, api.headers)]
+
+
+def test_wait_for_request_falls_back_to_headers_when_all_headers_fails():
+    req = FakeRequest(
+        "https://discord.com/api/v9/users/@me",
+        {"Authorization": "tok"},
+        all_headers_fails=True,
+    )
+    page = FakePage(requests=[req])
+    out = Session(None, None, page).wait_for_request(_any_request, timeout=1.0)
+    assert out == {"authorization": "tok"}
+
+
+def test_wait_for_request_timeout_is_converted_to_milliseconds():
+    page = FakePage(requests=[_api_request()])
+    Session(None, None, page).wait_for_request(_any_request, timeout=1.5)
+    assert page.expect_calls[0]["timeout"] == 1500
+
+
+def test_wait_for_request_returns_none_when_nothing_matches():
+    page = FakePage(requests=[_api_request()])
+    out = Session(None, None, page).wait_for_request(lambda url, headers: False, timeout=0)
+    assert out is None
+
+
+def test_wait_for_request_returns_none_when_listener_itself_raises():
+    page = FakePage(expect_request_error=FakeTimeout("Timeout 0ms exceeded"))
+    out = Session(None, None, page).wait_for_request(_any_request, timeout=0)
+    assert out is None
+
+
+def test_wait_for_request_does_not_reload_by_default():
+    page = FakePage(requests=[_api_request()])
+    Session(None, None, page).wait_for_request(_any_request, timeout=1.0)
+    assert page.reload_calls == []
+
+
+def test_wait_for_request_reload_uses_commit_and_millisecond_timeout():
+    page = FakePage(requests=[_api_request()])
+    Session(None, None, page).wait_for_request(
+        _any_request, timeout=1.0, reload=True, reload_timeout=2.5
+    )
+    assert page.reload_calls == [{"timeout": 2500, "wait_until": "commit"}]
+
+
+def test_wait_for_request_reload_happens_while_listener_is_armed():
+    page = FakePage(requests=[_api_request()])
+    Session(None, None, page).wait_for_request(_any_request, timeout=1.0, reload=True)
+    assert page.events == ["listen:start", "reload", "listen:end"]
