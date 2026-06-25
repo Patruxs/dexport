@@ -56,3 +56,34 @@ def test_acquire_no_wait_when_budget_left():
     rl.update("GET /x", {"x-ratelimit-remaining": "3", "x-ratelimit-reset-after": "5"})
     rl.acquire("GET /x")
     assert sleeps == []
+
+
+def test_note_429_global_blocks_all():
+    now = [0.0]
+    rl, sleeps = _limiter(now)
+    retry = rl.note_429({"x-ratelimit-global": "true"}, {"retry_after": 2.0, "global": True})
+    assert retry == 2.0
+    rl.acquire("GET /anything")
+    assert 2.0 in sleeps
+
+
+def test_note_429_body_retry_after():
+    now = [0.0]
+    rl, _ = _limiter(now)
+    assert rl.note_429({}, {"retry_after": 1.25}) == 1.25
+
+
+def test_penalize_forces_route_wait():
+    now = [0.0]
+    rl, sleeps = _limiter(now)
+    rl.penalize("POST /y", 3.0)
+    rl.acquire("POST /y")
+    assert 3.0 in sleeps
+
+
+def test_note_429_penalizes_route_when_key_given():
+    now = [0.0]
+    rl, sleeps = _limiter(now)
+    rl.note_429({}, {"retry_after": 4.0}, key="POST /z")
+    rl.acquire("POST /z")
+    assert 4.0 in sleeps
