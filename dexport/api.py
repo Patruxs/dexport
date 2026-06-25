@@ -83,3 +83,175 @@ def build_url(path: str) -> str:
     if not path.startswith("/"):
         path = "/" + path
     return DISCORD_API_BASE + path
+
+
+@dataclass(frozen=True)
+class ApiRequest:
+    """One Discord API call, described but not yet sent.
+
+    ``body`` is JSON-serialised when it is not ``None``/``str``. Because the
+    same object is used for ``--dry-run`` previews and for the real call, what
+    you see is exactly what gets sent.
+    """
+
+    method: str
+    path: str
+    body: Any = None
+
+    @property
+    def url(self) -> str:
+        return build_url(self.path)
+
+    def body_text(self) -> str | None:
+        """The body exactly as it will go over the wire (``None`` if no body)."""
+        if self.body is None:
+            return None
+        if isinstance(self.body, str):
+            return self.body
+        return json.dumps(self.body, ensure_ascii=False)
+
+
+@dataclass
+class ApiResponse:
+    status: int
+    headers: dict[str, str]
+    body: str
+
+    @property
+    def ok(self) -> bool:
+        return 200 <= self.status < 300
+
+    def json(self) -> Any:
+        """Parsed body, or ``None`` for an empty body (e.g. 204 No Content)."""
+        if not self.body:
+            return None
+        try:
+            return json.loads(self.body)
+        except json.JSONDecodeError as exc:
+            raise ApiError(self.status, self.body, f"invalid JSON in response: {exc}") from exc
+
+
+class ApiCore:
+    """Issues Discord API requests through the renderer with rate limiting."""
+
+    def __init__(
+        self,
+        session: Evaluator,
+        headers: dict[str, str],
+        limiter: RateLimiter | None = None,
+        *,
+        header_refresh: Callable[[], dict[str, str]] | None = None,
+        max_retries: int = 5,
+    ) -> None:
+        self.session = session
+        self.headers = dict(headers)
+        self.limiter = limiter or RateLimiter()
+        self._header_refresh = header_refresh
+        self.max_retries = max_retries
+        self._reauthed = False
+
+    # -- low level ----------------------------------------------------------
+    def _request_headers(self, has_body: bool) -> dict[str, str]:
+        h = dict(self.headers)
+        if has_body:
+            h["content-type"] = "application/json"
+        return h
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        body: Any = None,
+        *,
+        raise_for_status: bool = True,
+    ) -> ApiResponse:
+        """Issue one request; see :meth:`execute`."""
+        return self.execute(ApiRequest(method, path, body), raise_for_status=raise_for_status)
+
+    def execute(self, req: ApiRequest, *, raise_for_status: bool = True) -> ApiResponse:
+        """Send ``req``, transparently handling rate limits and retries.
+
+        With ``raise_for_status`` (the default) any final non-2xx response is
+        raised as :class:`ApiError`; pass ``False`` to inspect it yourself.
+        """
+        method = req.method.upper()
+        url = req.url
+        key = route_key(method, req.path)
+        body_str = req.body_text()
+
+        # Separate budgets per failure class so an early 401/500/network blip
+        # does not silently eat the rate-limit retry allowance.
+        net_tries = server_tries = rl_tries = 0
+        refresh_error: Exception | None = None
+        while True:
+            self.limiter.acquire(key)
+            payload = {
+                "url": url,
+                "method": method,
+                "headers": self._request_headers(body_str is not None),
+                "body": body_str,
+            }
+            raw = _check_fetch_result(self.session.evaluate(_FETCH_JS, payload))
+
+            if raw["error"] or raw["status"] == 0:
+                # Network-level failure inside the page.
+                net_tries += 1
+                if net_tries <= self.max_retries:
+                    self.limiter.sleeper(_backoff(net_tries))
+                    continue
+                raise ApiError(0, None, f"fetch failed in renderer: {raw['error']}")
+
+            resp = ApiResponse(
+                status=int(raw["status"]),
+                headers={k.lower(): v for k, v in (raw.get("headers") or {}).items()},
+                body=raw.get("body") or "",
+            )
+
+            self.limiter.update(key, resp.headers)
+
+            if resp.status == 429:
+                rl_tries += 1
+                retry_after = self.limiter.note_429(resp.headers, _safe_json(resp.body), key)
+                if rl_tries <= self.max_retries:
+                    # Only sleep when we are actually going to retry.
+                    self.limiter.sleeper(retry_after + 0.1)
+                    continue
+                raise RateLimitError(
+                    f"Still rate limited after {self.max_retries} retries on {key}."
+                )
+
+            if resp.status == 401 and self._header_refresh and not self._reauthed:
+                # Token/context may have rotated; re-snapshot once and retry.
+                self._reauthed = True
+                try:
+                    self.headers = dict(self._header_refresh())
+                except Exception as exc:  # noqa: BLE001 - reported with the 401 below
+                    refresh_error = exc
+                else:
+                    continue
+
+            if resp.status >= 500:
+                server_tries += 1
+                if server_tries <= self.max_retries:
+                    self.limiter.sleeper(_backoff(server_tries))
+                    continue
+
+            if resp.ok:
+                # A fresh success means a later rotation can re-auth again.
+                self._reauthed = False
+
+            if raise_for_status and not resp.ok:
+                raise _api_error(resp, refresh_error)
+
+            return resp
+
+    # -- convenience --------------------------------------------------------
+    def get_json(self, path: str) -> Any:
+        return self.request("GET", path).json()
+
+    def post_json(self, path: str, body: Any) -> Any:
+        return self.request("POST", path, body).json()
+
+    def me(self) -> dict[str, Any]:
+        me: dict[str, Any] = self.get_json("/users/@me")
+        return me
