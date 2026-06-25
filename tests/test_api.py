@@ -84,3 +84,37 @@ def test_get_without_body_has_no_content_type():
     sent = session.calls[0]
     assert sent["body"] is None
     assert "content-type" not in sent["headers"]
+
+
+def test_content_type_added_for_string_body():
+    session = FakeSession([_resp(200, "{}")])
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    api.request("POST", "/x", "raw")
+    sent = session.calls[0]
+    assert sent["body"] == "raw"
+    assert sent["headers"]["content-type"] == "application/json"
+
+
+def test_content_type_does_not_leak_into_snapshot_headers():
+    session = FakeSession([_resp(200, "{}"), _resp(200, "{}")])
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    api.post_json("/x", {"a": 1})
+    api.get_json("/y")
+    assert "content-type" not in session.calls[1]["headers"]
+    assert "content-type" not in api.headers
+
+
+def test_method_is_uppercased():
+    session = FakeSession([_resp(200, "{}")])
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    api.request("delete", "/x")
+    assert session.calls[0]["method"] == "DELETE"
+
+
+def test_execute_sends_prebuilt_request_url():
+    session = FakeSession([_resp(204, "")])
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    r = api.execute(ApiRequest("DELETE", "/channels/1/messages/2"))
+    assert r.status == 204
+    assert r.json() is None
+    assert session.calls[0]["url"] == "https://discord.com/api/v9/channels/1/messages/2"
