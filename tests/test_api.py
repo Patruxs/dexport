@@ -166,3 +166,47 @@ def test_malformed_fetch_result_raises_session_error_without_retry(raw):
     with pytest.raises(SessionError, match="malformed fetch result"):
         api.get_json("/users/@me")
     assert len(session.calls) == 1
+
+
+# --------------------------------------------------------------------------
+# 429 rate limits
+# --------------------------------------------------------------------------
+
+
+def test_429_then_success_retries():
+    session = FakeSession(
+        [
+            _resp(
+                429,
+                json.dumps({"retry_after": 0.01, "global": False}),
+                {"x-ratelimit-remaining": "0", "x-ratelimit-reset-after": "0.01"},
+            ),
+            _resp(200, json.dumps({"ok": True})),
+        ]
+    )
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    assert api.get_json("/users/@me") == {"ok": True}
+    assert len(session.calls) == 2
+
+
+def test_429_past_retry_budget_raises_rate_limit_error():
+    rl = _resp(
+        429,
+        json.dumps({"retry_after": 0}),
+        {"x-ratelimit-remaining": "0", "x-ratelimit-reset-after": "0"},
+    )
+    session = FakeSession([rl] * 10)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter(), max_retries=2)
+    with pytest.raises(RateLimitError, match="GET /users/@me"):
+        api.get_json("/users/@me")
+    assert len(session.calls) == 3  # initial + max_retries
+
+
+def test_429_sleeps_for_retry_after_plus_margin():
+    limiter, clock = _recording_limiter()
+    session = FakeSession(
+        [_resp(429, json.dumps({"retry_after": 1.5, "global": False})), _resp(200, "{}")]
+    )
+    api = ApiCore(session, {"authorization": "tok"}, limiter)
+    api.get_json("/channels/123456789012345678/messages")
+    assert clock.sleeps == [pytest.approx(1.6)]
