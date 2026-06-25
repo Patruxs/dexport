@@ -255,3 +255,23 @@ class ApiCore:
     def me(self) -> dict[str, Any]:
         me: dict[str, Any] = self.get_json("/users/@me")
         return me
+
+
+def _api_error(resp: ApiResponse, refresh_error: Exception | None = None) -> ApiError:
+    body = _safe_json(resp.body)
+    if refresh_error is None:
+        return ApiError(resp.status, body)
+    # Don't hide *why* the automatic re-auth didn't help.
+    detail = extract_message(body) or "unauthorized"
+    err = ApiError(
+        resp.status, body, f"{detail} (re-capturing headers also failed: {refresh_error})"
+    )
+    err.__cause__ = refresh_error
+    return err
+
+
+def _safe_json(text: str) -> Any:
+    try:
+        return json.loads(text) if text else None
+    except json.JSONDecodeError:
+        return text
