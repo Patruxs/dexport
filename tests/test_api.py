@@ -118,3 +118,51 @@ def test_execute_sends_prebuilt_request_url():
     assert r.status == 204
     assert r.json() is None
     assert session.calls[0]["url"] == "https://discord.com/api/v9/channels/1/messages/2"
+
+
+def test_response_headers_are_lowercased():
+    session = FakeSession(
+        [_resp(200, "{}", {"X-RateLimit-Remaining": "3", "Content-Type": "application/json"})]
+    )
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    r = api.request("GET", "/x")
+    assert r.headers == {"x-ratelimit-remaining": "3", "content-type": "application/json"}
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        (
+            "https://cdn.discordapp.com/attachments/1/2/a.png",
+            "https://cdn.discordapp.com/attachments/1/2/a.png",
+        ),
+        ("http://localhost:9222/json", "http://localhost:9222/json"),
+        ("users/@me", "https://discord.com/api/v9/users/@me"),
+        ("/users/@me", "https://discord.com/api/v9/users/@me"),
+        ("/channels/1/messages?limit=5", "https://discord.com/api/v9/channels/1/messages?limit=5"),
+    ],
+)
+def test_build_url(path, expected):
+    assert build_url(path) == expected
+
+
+# --------------------------------------------------------------------------
+# Malformed renderer replies
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"status": 200},  # missing headers/body/error
+        {"status": 200, "headers": {}, "body": "{}"},  # missing error
+        "not a dict",
+        None,
+    ],
+)
+def test_malformed_fetch_result_raises_session_error_without_retry(raw):
+    session = FakeSession([raw] * 5)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    with pytest.raises(SessionError, match="malformed fetch result"):
+        api.get_json("/users/@me")
+    assert len(session.calls) == 1
