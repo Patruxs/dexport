@@ -210,3 +210,76 @@ def test_429_sleeps_for_retry_after_plus_margin():
     api = ApiCore(session, {"authorization": "tok"}, limiter)
     api.get_json("/channels/123456789012345678/messages")
     assert clock.sleeps == [pytest.approx(1.6)]
+
+
+def test_exhausted_route_budget_delays_next_call_on_same_route():
+    limiter, clock = _recording_limiter()
+    session = FakeSession(
+        [
+            _resp(200, "{}", {"x-ratelimit-remaining": "0", "x-ratelimit-reset-after": "2.5"}),
+            _resp(200, "{}"),
+        ]
+    )
+    api = ApiCore(session, {"authorization": "tok"}, limiter)
+    api.get_json("/channels/1/messages")
+    api.get_json("/channels/1/messages")
+    assert clock.sleeps == [2.5]
+
+
+def test_retry_budgets_are_independent():
+    # A 500 must not consume the 429 retry budget (max_retries=2).
+    rl_429 = _resp(
+        429,
+        json.dumps({"retry_after": 0}),
+        {"x-ratelimit-remaining": "0", "x-ratelimit-reset-after": "0"},
+    )
+    session = FakeSession([_resp(500, "boom"), rl_429, rl_429, _resp(200, json.dumps({"ok": 1}))])
+    api = ApiCore(session, {"authorization": "t"}, _no_sleep_limiter(), max_retries=2)
+    assert api.get_json("/users/@me") == {"ok": 1}
+    assert len(session.calls) == 4
+
+
+# --------------------------------------------------------------------------
+# 401 re-auth
+# --------------------------------------------------------------------------
+
+
+def test_401_triggers_single_reauth():
+    session = FakeSession(
+        [
+            _resp(401, json.dumps({"message": "401: Unauthorized"})),
+            _resp(200, json.dumps({"ok": True})),
+        ]
+    )
+    refreshed = {"n": 0}
+
+    def refresh():
+        refreshed["n"] += 1
+        return {"authorization": "new-token"}
+
+    api = ApiCore(session, {"authorization": "old"}, _no_sleep_limiter(), header_refresh=refresh)
+    assert api.get_json("/users/@me") == {"ok": True}
+    assert refreshed["n"] == 1
+    assert session.calls[1]["headers"]["authorization"] == "new-token"
+
+
+def test_reauth_resets_after_success():
+    # Two separate token rotations in one session must both recover.
+    session = FakeSession(
+        [
+            _resp(401, json.dumps({"message": "401"})),
+            _resp(200, json.dumps({"ok": 1})),
+            _resp(401, json.dumps({"message": "401"})),
+            _resp(200, json.dumps({"ok": 2})),
+        ]
+    )
+    n = {"c": 0}
+
+    def refresh():
+        n["c"] += 1
+        return {"authorization": f"tok{n['c']}"}
+
+    api = ApiCore(session, {"authorization": "tok0"}, _no_sleep_limiter(), header_refresh=refresh)
+    assert api.get_json("/users/@me") == {"ok": 1}
+    assert api.get_json("/users/@me") == {"ok": 2}
+    assert n["c"] == 2  # reauth fired on both 401s, not just the first
