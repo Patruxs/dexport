@@ -283,3 +283,38 @@ def test_reauth_resets_after_success():
     assert api.get_json("/users/@me") == {"ok": 1}
     assert api.get_json("/users/@me") == {"ok": 2}
     assert n["c"] == 2  # reauth fired on both 401s, not just the first
+
+
+def test_401_after_refresh_is_not_refreshed_twice():
+    session = FakeSession([_resp(401, json.dumps({"message": "401"}))] * 5)
+    calls = {"n": 0}
+
+    def refresh():
+        calls["n"] += 1
+        return {"authorization": "new"}
+
+    api = ApiCore(session, {"authorization": "old"}, _no_sleep_limiter(), header_refresh=refresh)
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/users/@me")
+    assert exc.value.status == 401
+    assert calls["n"] == 1
+    assert len(session.calls) == 2
+    assert session.calls[1]["headers"]["authorization"] == "new"
+
+
+def test_401_without_refresh_returns_response_after_one_call():
+    session = FakeSession([_resp(401, json.dumps({"message": "401: Unauthorized"}))] * 3)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    r = api.request("GET", "/users/@me", raise_for_status=False)
+    assert r.status == 401
+    assert len(session.calls) == 1
+
+
+def test_401_without_refresh_raises_plain_api_error():
+    session = FakeSession([_resp(401, json.dumps({"message": "401: Unauthorized"}))] * 3)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/users/@me")
+    assert exc.value.status == 401
+    assert "re-capturing" not in str(exc.value)
+    assert len(session.calls) == 1
