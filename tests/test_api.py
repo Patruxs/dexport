@@ -318,3 +318,64 @@ def test_401_without_refresh_raises_plain_api_error():
     assert exc.value.status == 401
     assert "re-capturing" not in str(exc.value)
     assert len(session.calls) == 1
+
+
+def test_401_with_failing_refresh_reports_both_failures():
+    session = FakeSession([_resp(401, json.dumps({"message": "401: Unauthorized"}))] * 3)
+    cause = HeaderCaptureError("no api request seen")
+
+    def refresh():
+        raise cause
+
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter(), header_refresh=refresh)
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/users/@me")
+    err = exc.value
+    assert err.status == 401
+    assert "401: Unauthorized" in str(err)
+    assert "re-capturing headers also failed: no api request seen" in str(err)
+    assert err.__cause__ is cause
+    assert len(session.calls) == 1  # no retry when the refresh itself failed
+    assert api.headers == {"authorization": "tok"}  # old headers kept
+
+
+# --------------------------------------------------------------------------
+# 4xx client errors
+# --------------------------------------------------------------------------
+
+
+def test_403_raises_api_error_with_discord_message():
+    session = FakeSession(
+        [_resp(403, json.dumps({"message": "Missing Access", "code": 50001}))] * 3
+    )
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/channels/1/messages")
+    err = exc.value
+    assert err.status == 403
+    assert err.body["message"] == "Missing Access"
+    assert "Missing Access" in str(err)
+    assert "403" in str(err)
+    assert len(session.calls) == 1  # client errors are not retried
+
+
+def test_4xx_with_raise_for_status_false_returns_response():
+    session = FakeSession([_resp(404, json.dumps({"message": "Unknown Channel"}))])
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    r = api.request("GET", "/channels/0", raise_for_status=False)
+    assert r.status == 404
+    assert not r.ok
+    assert r.json() == {"message": "Unknown Channel"}
+
+
+# --------------------------------------------------------------------------
+# 5xx / network backoff
+# --------------------------------------------------------------------------
+
+
+def test_500_retries_then_raises():
+    session = FakeSession([_resp(500, "boom")] * 10)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter(), max_retries=2)
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/users/@me")
+    assert exc.value.status == 500
