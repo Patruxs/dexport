@@ -93,3 +93,15 @@ def edit_message_request(channel_id: str, message_id: str, content: str) -> ApiR
     return ApiRequest(
         "PATCH", f"/channels/{channel_id}/messages/{message_id}", {"content": content}
     )
+
+
+def delete_message_request(channel_id: str, message_id: str) -> ApiRequest:
+    return ApiRequest("DELETE", f"/channels/{channel_id}/messages/{message_id}")
+
+
+def add_reaction_request(channel_id: str, message_id: str, emoji: str) -> ApiRequest:
+    return ApiRequest("PUT", _reaction_path(channel_id, message_id, emoji))
+
+
+def remove_reaction_request(channel_id: str, message_id: str, emoji: str) -> ApiRequest:
+    return ApiRequest("DELETE", _reaction_path(channel_id, message_id, emoji))
