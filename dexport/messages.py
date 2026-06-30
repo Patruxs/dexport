@@ -64,3 +64,32 @@ def fetch_history(
             break
         cursor = batch[-1]["id"]
     return collected[:limit]
+
+
+# --------------------------------------------------------------------------
+# Write — request builders
+# --------------------------------------------------------------------------
+
+
+def send_message_request(
+    channel_id: str,
+    content: str,
+    *,
+    reply_to: str | None = None,
+    fail_if_not_exists: bool = False,
+) -> ApiRequest:
+    """``POST`` a message; with ``reply_to`` it becomes a reply."""
+    body: dict[str, object] = {"content": content}
+    if reply_to:
+        body["message_reference"] = {
+            "channel_id": channel_id,
+            "message_id": reply_to,
+            "fail_if_not_exists": fail_if_not_exists,
+        }
+    return ApiRequest("POST", f"/channels/{channel_id}/messages", body)
+
+
+def edit_message_request(channel_id: str, message_id: str, content: str) -> ApiRequest:
+    return ApiRequest(
+        "PATCH", f"/channels/{channel_id}/messages/{message_id}", {"content": content}
+    )
