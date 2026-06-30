@@ -36,3 +36,52 @@ def test_encode_custom_emoji_angle():
 
 def test_encode_custom_emoji_bare():
     assert encode_emoji("blobcat:12345") == "blobcat%3A12345"
+
+
+def test_encode_strips_whitespace():
+    assert encode_emoji("  👍  ") == "%F0%9F%91%8D"
+
+
+# --------------------------------------------------------------------------
+# fetch_history
+# --------------------------------------------------------------------------
+
+
+def _page(newest_id: int, count: int) -> list[dict]:
+    """``count`` messages with descending ids from ``newest_id`` (Discord order)."""
+    return [{"id": str(newest_id - i), "content": f"m{newest_id - i}"} for i in range(count)]
+
+
+def _paths(api: FakeApi) -> list[str]:
+    return [path for _method, path, _body in api.calls]
+
+
+def test_fetch_history_pages_until_limit_reached():
+    api = (
+        FakeApi().queue(200, _page(300, 100)).queue(200, _page(200, 100)).queue(200, _page(100, 50))
+    )
+
+    got = fetch_history(api, "c", limit=250)
+
+    assert _paths(api) == [
+        "/channels/c/messages?limit=100",
+        "/channels/c/messages?limit=100&before=201",
+        "/channels/c/messages?limit=50&before=101",
+    ]
+    assert all(method == "GET" and body is None for method, _path, body in api.calls)
+    assert len(got) == 250
+    # Newest first, pages concatenated in order.
+    assert [m["id"] for m in got] == [str(i) for i in range(300, 50, -1)]
+
+
+def test_fetch_history_short_page_stops_early():
+    api = FakeApi().queue(200, _page(30, 30))
+    got = fetch_history(api, "c", limit=250)
+    assert [m["id"] for m in got] == [str(i) for i in range(30, 0, -1)]
+    assert len(api.calls) == 1
+
+
+def test_fetch_history_empty_channel_returns_empty_list():
+    api = FakeApi().queue(200, [])
+    assert fetch_history(api, "c", limit=250) == []
+    assert _paths(api) == ["/channels/c/messages?limit=100"]
