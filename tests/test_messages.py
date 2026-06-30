@@ -85,3 +85,25 @@ def test_fetch_history_empty_channel_returns_empty_list():
     api = FakeApi().queue(200, [])
     assert fetch_history(api, "c", limit=250) == []
     assert _paths(api) == ["/channels/c/messages?limit=100"]
+
+
+def test_fetch_history_treats_empty_body_as_no_messages():
+    api = FakeApi().queue(200)  # empty body -> ApiResponse.json() is None
+    assert fetch_history(api, "c") == []
+    assert len(api.calls) == 1
+
+
+def test_fetch_history_reports_running_totals():
+    api = (
+        FakeApi().queue(200, _page(300, 100)).queue(200, _page(200, 100)).queue(200, _page(100, 50))
+    )
+    totals: list[int] = []
+    fetch_history(api, "c", limit=250, on_page=totals.append)
+    assert totals == [100, 200, 250]
+
+
+def test_fetch_history_on_page_not_called_for_empty_channel():
+    api = FakeApi().queue(200, [])
+    totals: list[int] = []
+    fetch_history(api, "c", on_page=totals.append)
+    assert totals == []
