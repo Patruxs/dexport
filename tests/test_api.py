@@ -357,3 +357,82 @@ def test_403_raises_api_error_with_discord_message():
     assert "Missing Access" in str(err)
     assert "403" in str(err)
     assert len(session.calls) == 1  # client errors are not retried
+
+
+def test_4xx_with_raise_for_status_false_returns_response():
+    session = FakeSession([_resp(404, json.dumps({"message": "Unknown Channel"}))])
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    r = api.request("GET", "/channels/0", raise_for_status=False)
+    assert r.status == 404
+    assert not r.ok
+    assert r.json() == {"message": "Unknown Channel"}
+
+
+# --------------------------------------------------------------------------
+# 5xx / network backoff
+# --------------------------------------------------------------------------
+
+
+def test_500_retries_then_raises():
+    session = FakeSession([_resp(500, "boom")] * 10)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter(), max_retries=2)
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/users/@me")
+    assert exc.value.status == 500
+
+
+def test_5xx_backoff_sleeps_double_then_succeeds():
+    limiter, clock = _recording_limiter()
+    session = FakeSession(
+        [_resp(500, "boom"), _resp(502, "bad gateway"), _resp(200, json.dumps({"ok": 1}))]
+    )
+    api = ApiCore(session, {"authorization": "tok"}, limiter)
+    assert api.get_json("/users/@me") == {"ok": 1}
+    assert clock.sleeps == [2.0, 4.0]
+    assert len(session.calls) == 3
+
+
+def test_5xx_backoff_is_capped():
+    limiter, clock = _recording_limiter()
+    session = FakeSession([_resp(503, "")] * 10)
+    api = ApiCore(session, {"authorization": "tok"}, limiter, max_retries=5)
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/users/@me")
+    assert exc.value.status == 503
+    assert clock.sleeps == [2.0, 4.0, 8.0, 10.0, 10.0]
+    assert len(session.calls) == 6
+
+
+def test_network_error_in_renderer_retries_then_raises():
+    session = FakeSession([_resp(0, "", {}, error="TypeError: failed to fetch")] * 10)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter(), max_retries=1)
+    with pytest.raises(ApiError):
+        api.get_json("/users/@me")
+
+
+def test_network_error_details_surface_in_api_error():
+    session = FakeSession([_resp(0, "", {}, error="TypeError: failed to fetch")] * 10)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter(), max_retries=1)
+    with pytest.raises(ApiError, match="TypeError: failed to fetch") as exc:
+        api.get_json("/users/@me")
+    assert exc.value.status == 0
+    assert len(session.calls) == 2
+
+
+def test_network_error_backoff_matches_5xx():
+    limiter, clock = _recording_limiter()
+    session = FakeSession(
+        [_resp(0, "", {}, error="TypeError: Failed to fetch")] * 2 + [_resp(200, "{}")]
+    )
+    api = ApiCore(session, {"authorization": "tok"}, limiter)
+    api.get_json("/x")
+    assert clock.sleeps == [2.0, 4.0]
+
+
+# --------------------------------------------------------------------------
+# ApiRequest
+# --------------------------------------------------------------------------
+
+
+def test_api_request_url_is_absolute():
+    assert ApiRequest("GET", "/users/@me").url == "https://discord.com/api/v9/users/@me"
