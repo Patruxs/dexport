@@ -237,3 +237,123 @@ def test_retry_budgets_are_independent():
     api = ApiCore(session, {"authorization": "t"}, _no_sleep_limiter(), max_retries=2)
     assert api.get_json("/users/@me") == {"ok": 1}
     assert len(session.calls) == 4
+
+
+# --------------------------------------------------------------------------
+# 401 re-auth
+# --------------------------------------------------------------------------
+
+
+def test_401_triggers_single_reauth():
+    session = FakeSession(
+        [
+            _resp(401, json.dumps({"message": "401: Unauthorized"})),
+            _resp(200, json.dumps({"ok": True})),
+        ]
+    )
+    refreshed = {"n": 0}
+
+    def refresh():
+        refreshed["n"] += 1
+        return {"authorization": "new-token"}
+
+    api = ApiCore(session, {"authorization": "old"}, _no_sleep_limiter(), header_refresh=refresh)
+    assert api.get_json("/users/@me") == {"ok": True}
+    assert refreshed["n"] == 1
+    assert session.calls[1]["headers"]["authorization"] == "new-token"
+
+
+def test_reauth_resets_after_success():
+    # Two separate token rotations in one session must both recover.
+    session = FakeSession(
+        [
+            _resp(401, json.dumps({"message": "401"})),
+            _resp(200, json.dumps({"ok": 1})),
+            _resp(401, json.dumps({"message": "401"})),
+            _resp(200, json.dumps({"ok": 2})),
+        ]
+    )
+    n = {"c": 0}
+
+    def refresh():
+        n["c"] += 1
+        return {"authorization": f"tok{n['c']}"}
+
+    api = ApiCore(session, {"authorization": "tok0"}, _no_sleep_limiter(), header_refresh=refresh)
+    assert api.get_json("/users/@me") == {"ok": 1}
+    assert api.get_json("/users/@me") == {"ok": 2}
+    assert n["c"] == 2  # reauth fired on both 401s, not just the first
+
+
+def test_401_after_refresh_is_not_refreshed_twice():
+    session = FakeSession([_resp(401, json.dumps({"message": "401"}))] * 5)
+    calls = {"n": 0}
+
+    def refresh():
+        calls["n"] += 1
+        return {"authorization": "new"}
+
+    api = ApiCore(session, {"authorization": "old"}, _no_sleep_limiter(), header_refresh=refresh)
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/users/@me")
+    assert exc.value.status == 401
+    assert calls["n"] == 1
+    assert len(session.calls) == 2
+    assert session.calls[1]["headers"]["authorization"] == "new"
+
+
+def test_401_without_refresh_returns_response_after_one_call():
+    session = FakeSession([_resp(401, json.dumps({"message": "401: Unauthorized"}))] * 3)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    r = api.request("GET", "/users/@me", raise_for_status=False)
+    assert r.status == 401
+    assert len(session.calls) == 1
+
+
+def test_401_without_refresh_raises_plain_api_error():
+    session = FakeSession([_resp(401, json.dumps({"message": "401: Unauthorized"}))] * 3)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/users/@me")
+    assert exc.value.status == 401
+    assert "re-capturing" not in str(exc.value)
+    assert len(session.calls) == 1
+
+
+def test_401_with_failing_refresh_reports_both_failures():
+    session = FakeSession([_resp(401, json.dumps({"message": "401: Unauthorized"}))] * 3)
+    cause = HeaderCaptureError("no api request seen")
+
+    def refresh():
+        raise cause
+
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter(), header_refresh=refresh)
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/users/@me")
+    err = exc.value
+    assert err.status == 401
+    assert "401: Unauthorized" in str(err)
+    assert "re-capturing headers also failed: no api request seen" in str(err)
+    assert err.__cause__ is cause
+    assert len(session.calls) == 1  # no retry when the refresh itself failed
+    assert api.headers == {"authorization": "tok"}  # old headers kept
+
+
+# --------------------------------------------------------------------------
+# 4xx client errors
+# --------------------------------------------------------------------------
+
+
+def test_403_raises_api_error_with_discord_message():
+    session = FakeSession(
+        [_resp(403, json.dumps({"message": "Missing Access", "code": 50001}))] * 3
+    )
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter())
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/channels/1/messages")
+    err = exc.value
+    assert err.status == 403
+    assert err.body["message"] == "Missing Access"
+    assert "Missing Access" in str(err)
+    assert "403" in str(err)
+    assert len(session.calls) == 1  # client errors are not retried
