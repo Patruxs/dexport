@@ -107,3 +107,30 @@ def test_fetch_history_on_page_not_called_for_empty_channel():
     totals: list[int] = []
     fetch_history(api, "c", on_page=totals.append)
     assert totals == []
+
+
+def test_fetch_history_before_seed_used_on_first_request():
+    api = FakeApi().queue(200, _page(998, 10))
+    fetch_history(api, "c", limit=10, before="999")
+    assert _paths(api) == ["/channels/c/messages?limit=10&before=999"]
+
+
+def test_fetch_history_small_limit_requests_exact_page_size():
+    api = FakeApi().queue(200, _page(25, 25))
+    got = fetch_history(api, "c", limit=25)
+    assert _paths(api) == ["/channels/c/messages?limit=25"]
+    assert len(got) == 25
+
+
+def test_fetch_history_stops_at_limit_without_probing_next_page():
+    # One full page satisfies limit=100; must not issue a second request.
+    api = FakeApi().queue(200, _page(100, 100))
+    got = fetch_history(api, "c", limit=100)
+    assert len(got) == 100
+    assert len(api.calls) == 1
+
+
+def test_fetch_history_truncates_overfull_page_to_limit():
+    api = FakeApi().queue(200, _page(7, 7))
+    got = fetch_history(api, "c", limit=5)
+    assert [m["id"] for m in got] == ["7", "6", "5", "4", "3"]
