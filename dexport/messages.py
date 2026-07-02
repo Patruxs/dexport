@@ -105,3 +105,21 @@ def add_reaction_request(channel_id: str, message_id: str, emoji: str) -> ApiReq
 
 def remove_reaction_request(channel_id: str, message_id: str, emoji: str) -> ApiRequest:
     return ApiRequest("DELETE", _reaction_path(channel_id, message_id, emoji))
+
+
+def _reaction_path(channel_id: str, message_id: str, emoji: str) -> str:
+    return f"/channels/{channel_id}/messages/{message_id}/reactions/{encode_emoji(emoji)}/@me"
+
+
+def encode_emoji(emoji: str) -> str:
+    """Return the path segment Discord expects for a reaction emoji.
+
+    * Custom emoji: ``<:name:id>`` / ``<a:name:id>`` / ``name:id`` -> ``name:id``
+    * Unicode emoji: the raw character(s), percent-encoded.
+    """
+    emoji = emoji.strip()
+    m = _CUSTOM_EMOJI_RE.match(emoji)
+    if m:
+        return quote(f"{m.group(1)}:{m.group(2)}", safe="")
+    # Bare "name:id" custom emoji and raw unicode emoji both encode the same way.
+    return quote(emoji, safe="")
