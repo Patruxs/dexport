@@ -157,3 +157,21 @@ def test_send_message_request_plain():
     req = send_message_request("c", "hi")
     assert (req.method, req.path) == ("POST", "/channels/c/messages")
     assert req.body == {"content": "hi"}
+
+
+def test_send_message_request_reply_defaults_to_lenient_reference():
+    req = send_message_request("c", "hi", reply_to="m")
+    assert req.body == {
+        "content": "hi",
+        "message_reference": {"channel_id": "c", "message_id": "m", "fail_if_not_exists": False},
+    }
+
+
+def test_send_message_request_reply_strict_reference():
+    req = send_message_request("c", "hi", reply_to="m", fail_if_not_exists=True)
+    assert req.body["message_reference"]["fail_if_not_exists"] is True
+
+
+def test_send_message_request_ignores_fail_flag_without_reply():
+    req = send_message_request("c", "hi", fail_if_not_exists=True)
+    assert "message_reference" not in req.body
