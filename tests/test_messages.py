@@ -134,3 +134,26 @@ def test_fetch_history_truncates_overfull_page_to_limit():
     api = FakeApi().queue(200, _page(7, 7))
     got = fetch_history(api, "c", limit=5)
     assert [m["id"] for m in got] == ["7", "6", "5", "4", "3"]
+
+
+def test_fetch_history_default_limit_is_one_page():
+    api = FakeApi().queue(200, _page(100, 100))
+    assert len(fetch_history(api, "c")) == MAX_PAGE_SIZE
+    assert _paths(api) == [f"/channels/c/messages?limit={MAX_PAGE_SIZE}"]
+
+
+def test_fetch_history_propagates_api_errors():
+    api = FakeApi().queue(403, {"message": "Missing Access"})
+    with pytest.raises(ApiError, match="Missing Access"):
+        fetch_history(api, "c")
+
+
+# --------------------------------------------------------------------------
+# Request builders
+# --------------------------------------------------------------------------
+
+
+def test_send_message_request_plain():
+    req = send_message_request("c", "hi")
+    assert (req.method, req.path) == ("POST", "/channels/c/messages")
+    assert req.body == {"content": "hi"}
