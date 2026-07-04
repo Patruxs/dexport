@@ -73,3 +73,31 @@ def test_numeric_channel_name_resolves_by_name():
         "channels": {"1": [{"id": "999", "name": "1234567890123456", "type": 0}]},
     }
     assert Resolver(NoApi(), cache).resolve_channel("1", "1234567890123456")["id"] == "999"
+
+
+def test_resolve_guild_by_cached_id_returns_cached_entry(resolver):
+    # An ID already in the cache must return the real name, not a passthrough.
+    assert resolver.resolve_guild("1") == {"id": "1", "name": "cú đêm"}
+
+
+def test_resolve_channel_by_id_bypasses_type_filter(resolver):
+    # An explicit channel ID is trusted even for a voice channel.
+    assert resolver.resolve_channel("1", "11")["name"] == "voice-hangout"
+
+
+# --------------------------------------------------------------------------
+# Snowflake passthrough shapes
+# --------------------------------------------------------------------------
+
+
+def test_resolve_guild_passthrough_entry_has_id_and_name(resolver):
+    assert resolver.resolve_guild(SNOWFLAKE) == {"id": SNOWFLAKE, "name": SNOWFLAKE}
+
+
+def test_resolve_channel_passthrough_entry_has_all_four_keys(resolver):
+    assert resolver.resolve_channel("1", SNOWFLAKE) == {
+        "id": SNOWFLAKE,
+        "name": SNOWFLAKE,
+        "type": None,
+        "parent_id": None,
+    }
