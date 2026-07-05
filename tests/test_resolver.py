@@ -101,3 +101,41 @@ def test_resolve_channel_passthrough_entry_has_all_four_keys(resolver):
         "type": None,
         "parent_id": None,
     }
+
+
+def test_resolve_channel_non_snowflake_number_is_not_passed_through(resolver):
+    with pytest.raises(ResolveError):
+        resolver.resolve_channel("1", "12345")
+
+
+# --------------------------------------------------------------------------
+# Cache population through the API
+# --------------------------------------------------------------------------
+
+
+def test_guilds_first_call_fetches_and_stores_only_id_and_name():
+    api = FakeApi().queue(
+        200,
+        [
+            {"id": "1", "name": "srv", "icon": "abc", "owner": True, "permissions": "0"},
+            {"id": "2", "name": "other", "features": ["COMMUNITY"]},
+        ],
+    )
+    r = Resolver(api, {})
+
+    got = r.guilds()
+
+    assert api.calls == [("GET", "/users/@me/guilds", None)]
+    assert got == [{"id": "1", "name": "srv"}, {"id": "2", "name": "other"}]
+    assert r.cache["guilds"] == got
+
+
+def test_guilds_second_call_does_not_fetch():
+    api = FakeApi().queue(200, [{"id": "1", "name": "srv"}])
+    r = Resolver(api, {})
+
+    first = r.guilds()
+    second = r.guilds()
+
+    assert second == first
+    assert len(api.calls) == 1
