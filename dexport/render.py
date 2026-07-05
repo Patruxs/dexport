@@ -50,3 +50,25 @@ def format_timestamp(iso: str | None) -> str:
         return dt.strftime("%Y-%m-%d %H:%M")
     except (ValueError, TypeError):
         return iso
+
+
+def attachment_lines(msg: Message) -> list[str]:
+    out = []
+    for att in msg.get("attachments", []) or []:
+        size = att.get("size")
+        suffix = f" ({human_bytes(size)})" if isinstance(size, int) else ""
+        out.append(f"{att.get('filename', 'file')}{suffix}: {att.get('url', '')}")
+    return out
+
+
+def reaction_summary(msg: Message) -> str:
+    parts = []
+    for r in msg.get("reactions", []) or []:
+        emoji = (r.get("emoji") or {}).get("name") or "?"
+        parts.append(f"{emoji}x{r.get('count', 0)}")
+    return "  ".join(parts)
+
+
+def oldest_first(messages: Iterable[Message]) -> list[Message]:
+    """Discord orders newest-first; reverse to chronological."""
+    return list(reversed(list(messages)))
