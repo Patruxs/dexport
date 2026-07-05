@@ -100,3 +100,68 @@ def test_fetch_history_reports_running_totals():
     totals: list[int] = []
     fetch_history(api, "c", limit=250, on_page=totals.append)
     assert totals == [100, 200, 250]
+
+
+def test_fetch_history_on_page_not_called_for_empty_channel():
+    api = FakeApi().queue(200, [])
+    totals: list[int] = []
+    fetch_history(api, "c", on_page=totals.append)
+    assert totals == []
+
+
+def test_fetch_history_before_seed_used_on_first_request():
+    api = FakeApi().queue(200, _page(998, 10))
+    fetch_history(api, "c", limit=10, before="999")
+    assert _paths(api) == ["/channels/c/messages?limit=10&before=999"]
+
+
+def test_fetch_history_small_limit_requests_exact_page_size():
+    api = FakeApi().queue(200, _page(25, 25))
+    got = fetch_history(api, "c", limit=25)
+    assert _paths(api) == ["/channels/c/messages?limit=25"]
+    assert len(got) == 25
+
+
+def test_fetch_history_stops_at_limit_without_probing_next_page():
+    # One full page satisfies limit=100; must not issue a second request.
+    api = FakeApi().queue(200, _page(100, 100))
+    got = fetch_history(api, "c", limit=100)
+    assert len(got) == 100
+    assert len(api.calls) == 1
+
+
+def test_fetch_history_truncates_overfull_page_to_limit():
+    api = FakeApi().queue(200, _page(7, 7))
+    got = fetch_history(api, "c", limit=5)
+    assert [m["id"] for m in got] == ["7", "6", "5", "4", "3"]
+
+
+def test_fetch_history_default_limit_is_one_page():
+    api = FakeApi().queue(200, _page(100, 100))
+    assert len(fetch_history(api, "c")) == MAX_PAGE_SIZE
+    assert _paths(api) == [f"/channels/c/messages?limit={MAX_PAGE_SIZE}"]
+
+
+def test_fetch_history_propagates_api_errors():
+    api = FakeApi().queue(403, {"message": "Missing Access"})
+    with pytest.raises(ApiError, match="Missing Access"):
+        fetch_history(api, "c")
+
+
+# --------------------------------------------------------------------------
+# Request builders
+# --------------------------------------------------------------------------
+
+
+def test_send_message_request_plain():
+    req = send_message_request("c", "hi")
+    assert (req.method, req.path) == ("POST", "/channels/c/messages")
+    assert req.body == {"content": "hi"}
+
+
+def test_send_message_request_reply_defaults_to_lenient_reference():
+    req = send_message_request("c", "hi", reply_to="m")
+    assert req.body == {
+        "content": "hi",
+        "message_reference": {"channel_id": "c", "message_id": "m", "fail_if_not_exists": False},
+    }
