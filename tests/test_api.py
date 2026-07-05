@@ -436,3 +436,50 @@ def test_network_error_backoff_matches_5xx():
 
 def test_api_request_url_is_absolute():
     assert ApiRequest("GET", "/users/@me").url == "https://discord.com/api/v9/users/@me"
+
+
+def test_api_request_body_text_none():
+    assert ApiRequest("DELETE", "/x").body_text() is None
+
+
+def test_api_request_body_text_passes_strings_through():
+    assert ApiRequest("POST", "/x", "raw payload").body_text() == "raw payload"
+
+
+def test_api_request_body_text_serialises_dict_without_escaping_unicode():
+    text = ApiRequest("POST", "/x", {"content": "xin chào 👍"}).body_text()
+    assert text == '{"content": "xin chào 👍"}'
+    assert json.loads(text) == {"content": "xin chào 👍"}
+
+
+def test_api_request_is_immutable():
+    # The same object is previewed (--dry-run) and then sent; it must not drift.
+    req = ApiRequest("POST", "/channels/c/messages", {"content": "hi"})
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        req.path = "/elsewhere"
+
+
+# --------------------------------------------------------------------------
+# ApiResponse
+# --------------------------------------------------------------------------
+
+
+def test_response_json_empty_body_is_none():
+    assert ApiResponse(204, {}, "").json() is None
+
+
+def test_response_json_invalid_raises_api_error():
+    r = ApiResponse(200, {}, "<html>oops</html>")
+    with pytest.raises(ApiError, match="invalid JSON") as exc:
+        r.json()
+    assert exc.value.status == 200
+    assert exc.value.body == "<html>oops</html>"
+    assert isinstance(exc.value.__cause__, json.JSONDecodeError)
+
+
+@pytest.mark.parametrize(
+    ("status", "ok"),
+    [(200, True), (204, True), (299, True), (199, False), (300, False), (404, False)],
+)
+def test_response_ok(status, ok):
+    assert ApiResponse(status, {}, "").ok is ok
