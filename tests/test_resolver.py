@@ -92,3 +92,134 @@ def test_resolve_channel_by_id_bypasses_type_filter(resolver):
 
 def test_resolve_guild_passthrough_entry_has_id_and_name(resolver):
     assert resolver.resolve_guild(SNOWFLAKE) == {"id": SNOWFLAKE, "name": SNOWFLAKE}
+
+
+def test_resolve_channel_passthrough_entry_has_all_four_keys(resolver):
+    assert resolver.resolve_channel("1", SNOWFLAKE) == {
+        "id": SNOWFLAKE,
+        "name": SNOWFLAKE,
+        "type": None,
+        "parent_id": None,
+    }
+
+
+def test_resolve_channel_non_snowflake_number_is_not_passed_through(resolver):
+    with pytest.raises(ResolveError):
+        resolver.resolve_channel("1", "12345")
+
+
+# --------------------------------------------------------------------------
+# Cache population through the API
+# --------------------------------------------------------------------------
+
+
+def test_guilds_first_call_fetches_and_stores_only_id_and_name():
+    api = FakeApi().queue(
+        200,
+        [
+            {"id": "1", "name": "srv", "icon": "abc", "owner": True, "permissions": "0"},
+            {"id": "2", "name": "other", "features": ["COMMUNITY"]},
+        ],
+    )
+    r = Resolver(api, {})
+
+    got = r.guilds()
+
+    assert api.calls == [("GET", "/users/@me/guilds", None)]
+    assert got == [{"id": "1", "name": "srv"}, {"id": "2", "name": "other"}]
+    assert r.cache["guilds"] == got
+
+
+def test_guilds_second_call_does_not_fetch():
+    api = FakeApi().queue(200, [{"id": "1", "name": "srv"}])
+    r = Resolver(api, {})
+
+    first = r.guilds()
+    second = r.guilds()
+
+    assert second == first
+    assert len(api.calls) == 1
+
+
+def test_guilds_refresh_refetches_and_replaces_cache():
+    api = (
+        FakeApi().queue(200, [{"id": "1", "name": "old"}]).queue(200, [{"id": "1", "name": "new"}])
+    )
+    r = Resolver(api, {})
+    r.guilds()
+
+    got = r.guilds(refresh=True)
+
+    assert got == [{"id": "1", "name": "new"}]
+    assert r.cache["guilds"] == got
+    assert len(api.calls) == 2
+
+
+def test_zero_guilds_caches_empty_list_and_does_not_refetch():
+    # Regression: the "already fetched" check must be ``is None``, not falsy,
+    # or an account in no guilds would hit the API on every call.
+    api = FakeApi().queue(200, [])
+    r = Resolver(api, {})
+
+    assert r.guilds() == []
+    assert r.cache["guilds"] == []
+    assert r.guilds() == []  # FakeApi would raise on a second request
+    assert len(api.calls) == 1
+
+
+def test_channels_fetches_and_stores_four_keys_keyed_by_guild():
+    api = FakeApi().queue(
+        200,
+        [
+            {
+                "id": "10",
+                "name": "general",
+                "type": 0,
+                "parent_id": "9",
+                "position": 3,
+                "topic": "chatter",
+                "nsfw": False,
+            }
+        ],
+    )
+    r = Resolver(api, {})
+
+    got = r.channels("1")
+
+    assert api.calls == [("GET", "/guilds/1/channels", None)]
+    assert got == [{"id": "10", "name": "general", "type": 0, "parent_id": "9"}]
+    assert r.cache["channels"] == {"1": got}
+
+
+def test_channels_missing_optional_fields_default_to_empty_or_none():
+    api = FakeApi().queue(200, [{"id": "10"}])
+    got = Resolver(api, {}).channels("1")
+    assert got == [{"id": "10", "name": "", "type": None, "parent_id": None}]
+
+
+def test_channels_second_call_does_not_fetch():
+    api = FakeApi().queue(200, [{"id": "10", "name": "general", "type": 0}])
+    r = Resolver(api, {})
+
+    first = r.channels("1")
+    second = r.channels("1")
+
+    assert second == first
+    assert len(api.calls) == 1
+
+
+def test_channels_are_cached_per_guild():
+    api = (
+        FakeApi()
+        .queue(200, [{"id": "10", "name": "a", "type": 0}])
+        .queue(200, [{"id": "20", "name": "b", "type": 0}])
+    )
+    r = Resolver(api, {})
+
+    r.channels("1")
+    r.channels("2")
+    r.channels("1")
+
+    assert [path for _, path, _ in api.calls] == ["/guilds/1/channels", "/guilds/2/channels"]
+    assert set(r.cache["channels"]) == {"1", "2"}
+    assert r.cache["channels"]["2"] == [{"id": "20", "name": "b", "type": 0, "parent_id": None}]
