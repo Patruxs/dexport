@@ -165,3 +165,58 @@ def test_send_message_request_reply_defaults_to_lenient_reference():
         "content": "hi",
         "message_reference": {"channel_id": "c", "message_id": "m", "fail_if_not_exists": False},
     }
+
+
+def test_send_message_request_reply_strict_reference():
+    req = send_message_request("c", "hi", reply_to="m", fail_if_not_exists=True)
+    assert req.body["message_reference"]["fail_if_not_exists"] is True
+
+
+def test_send_message_request_ignores_fail_flag_without_reply():
+    req = send_message_request("c", "hi", fail_if_not_exists=True)
+    assert "message_reference" not in req.body
+
+
+def test_edit_message_request():
+    req = edit_message_request("c", "m", "new text")
+    assert (req.method, req.path) == ("PATCH", "/channels/c/messages/m")
+    assert req.body == {"content": "new text"}
+
+
+def test_delete_message_request_has_no_body():
+    req = delete_message_request("c", "m")
+    assert (req.method, req.path, req.body) == ("DELETE", "/channels/c/messages/m", None)
+
+
+@pytest.mark.parametrize(
+    ("emoji", "segment"),
+    [("👍", "%F0%9F%91%8D"), ("<:blobcat:12345>", "blobcat%3A12345")],
+)
+def test_add_reaction_request(emoji, segment):
+    req = add_reaction_request("c", "m", emoji)
+    assert req.method == "PUT"
+    assert req.path == f"/channels/c/messages/m/reactions/{segment}/@me"
+    assert req.body is None
+
+
+def test_remove_reaction_request_mirrors_add_path():
+    add = add_reaction_request("c", "m", "<a:party:67890>")
+    rm = remove_reaction_request("c", "m", "<a:party:67890>")
+    assert rm.method == "DELETE"
+    assert rm.path == add.path
+    assert rm.path.endswith("/reactions/party%3A67890/@me")
+    assert rm.body is None
+
+
+def test_history_request_without_before():
+    req = history_request("c", limit=50)
+    assert (req.method, req.path, req.body) == ("GET", "/channels/c/messages?limit=50", None)
+
+
+def test_history_request_with_before():
+    req = history_request("c", limit=50, before="123")
+    assert req.path == "/channels/c/messages?limit=50&before=123"
+
+
+def test_history_request_empty_before_is_omitted():
+    assert "before" not in history_request("c", limit=50, before="").path
