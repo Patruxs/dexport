@@ -80,3 +80,24 @@ def test_markdown_without_title_has_no_heading():
 def test_json_is_chronological():
     data = json.loads(to_json(MESSAGES))
     assert [m["id"] for m in data] == ["1", "2"]
+
+
+def test_json_keeps_raw_objects_and_unicode():
+    text = to_json(MESSAGES)
+    assert "👍" in text  # not \\u-escaped
+    assert json.loads(text)[1] == MESSAGES[0]
+
+
+# --------------------------------------------------------------------------
+# Terminal
+# --------------------------------------------------------------------------
+
+
+def test_terminal_title_rule():
+    first_line = _render(MESSAGES, title="Room").splitlines()[0]
+    assert "Room" in first_line
+    assert "─" in first_line
+
+
+def test_terminal_without_title_has_no_rule():
+    assert "─" not in _render(MESSAGES)
