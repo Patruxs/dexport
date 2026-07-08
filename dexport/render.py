@@ -142,3 +142,42 @@ def to_markdown(messages: list[Message], title: str | None = None) -> str:
             lines.append(f"> {reactions}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def to_json(messages: list[Message], title: str | None = None) -> str:
+    """Raw message objects as a JSON array, oldest first (``title`` unused)."""
+    return json.dumps(oldest_first(messages), ensure_ascii=False, indent=2)
+
+
+#: Export format name -> renderer. Keys are matched case-insensitively.
+Exporter = Callable[[list[Message], str | None], str]
+EXPORTERS: dict[str, Exporter] = {
+    "md": to_markdown,
+    "markdown": to_markdown,
+    "json": to_json,
+}
+
+#: Format name -> file extension used for default output paths.
+EXPORT_EXTENSIONS: dict[str, str] = {"md": "md", "markdown": "md", "json": "json"}
+
+
+def get_exporter(fmt: str) -> Exporter:
+    try:
+        return EXPORTERS[fmt.lower()]
+    except KeyError:
+        known = ", ".join(sorted(set(EXPORTERS)))
+        raise ValueError(f"Unknown export format: {fmt!r} (use one of: {known})") from None
+
+
+def export_to_file(
+    messages: list[Message],
+    path: str,
+    fmt: str,
+    *,
+    title: str | None = None,
+) -> int:
+    """Write messages to ``path`` in ``fmt`` (see :data:`EXPORTERS`). Returns count."""
+    text = get_exporter(fmt)(messages, title)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return len(messages)
