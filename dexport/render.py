@@ -72,3 +72,73 @@ def reaction_summary(msg: Message) -> str:
 def oldest_first(messages: Iterable[Message]) -> list[Message]:
     """Discord orders newest-first; reverse to chronological."""
     return list(reversed(list(messages)))
+
+
+# --------------------------------------------------------------------------
+# Terminal
+# --------------------------------------------------------------------------
+
+
+def render_terminal(
+    messages: list[Message],
+    *,
+    title: str | None = None,
+    console: Console | None = None,
+) -> None:
+    """Pretty-print ``messages`` oldest-first (to ``console`` or stdout)."""
+    console = console or Console()
+    ordered = oldest_first(messages)
+    if title:
+        console.rule(f"[bold]{title}[/bold]")
+    if not ordered:
+        console.print("[dim](no messages)[/dim]")
+        return
+    for msg in ordered:
+        name = display_name(msg.get("author"))
+        ts = format_timestamp(msg.get("timestamp"))
+        edited = " (edited)" if msg.get("edited_timestamp") else ""
+        console.print(f"[bold cyan]{name}[/bold cyan] [dim]{ts}{edited}[/dim]")
+        content = msg.get("content") or ""
+        if content:
+            console.print(content)
+        for line in attachment_lines(msg):
+            console.print(f"  [magenta]📎 {line}[/magenta]")
+        reactions = reaction_summary(msg)
+        if reactions:
+            console.print(f"  [yellow]{reactions}[/yellow]")
+        console.print()
+
+
+# --------------------------------------------------------------------------
+# Export
+# --------------------------------------------------------------------------
+
+
+def to_markdown(messages: list[Message], title: str | None = None) -> str:
+    ordered = oldest_first(messages)
+    lines: list[str] = []
+    if title:
+        lines.append(f"# {title}")
+        lines.append("")
+    lines.append(f"_Exported {len(ordered)} messages._")
+    lines.append("")
+    for msg in ordered:
+        name = display_name(msg.get("author"))
+        ts = format_timestamp(msg.get("timestamp"))
+        edited = " *(edited)*" if msg.get("edited_timestamp") else ""
+        lines.append(f"### {name} — {ts}{edited}")
+        content = msg.get("content") or ""
+        if content:
+            lines.append("")
+            lines.append(content)
+        atts = attachment_lines(msg)
+        if atts:
+            lines.append("")
+            for line in atts:
+                lines.append(f"- 📎 {line}")
+        reactions = reaction_summary(msg)
+        if reactions:
+            lines.append("")
+            lines.append(f"> {reactions}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
