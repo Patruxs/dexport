@@ -101,3 +101,23 @@ def test_terminal_title_rule():
 
 def test_terminal_without_title_has_no_rule():
     assert "─" not in _render(MESSAGES)
+
+
+def test_terminal_is_chronological():
+    out = _render(MESSAGES)
+    assert out.index("first") < out.index("second")
+
+
+def test_terminal_shows_author_and_timestamp():
+    out = _render(MESSAGES)
+    assert "Bob 2024-01-01 12:05" in out
+    assert "alice 2024-01-01 12:00" in out
+
+
+def test_terminal_marks_edited_messages_only():
+    assert "(edited)" in _render([EDITED])
+    assert "(edited)" not in _render(MESSAGES)
+
+
+def test_terminal_attachment_line_includes_human_size():
+    assert "📎 a.png (2.0KB): http://x/a.png" in _render(MESSAGES)
