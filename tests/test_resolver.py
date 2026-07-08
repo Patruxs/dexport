@@ -223,3 +223,73 @@ def test_channels_are_cached_per_guild():
     assert [path for _, path, _ in api.calls] == ["/guilds/1/channels", "/guilds/2/channels"]
     assert set(r.cache["channels"]) == {"1", "2"}
     assert r.cache["channels"]["2"] == [{"id": "20", "name": "b", "type": 0, "parent_id": None}]
+
+
+def test_channels_refresh_refetches():
+    api = (
+        FakeApi()
+        .queue(200, [{"id": "10", "name": "old", "type": 0}])
+        .queue(200, [{"id": "10", "name": "new", "type": 0}])
+    )
+    r = Resolver(api, {})
+    r.channels("1")
+
+    assert r.channels("1", refresh=True)[0]["name"] == "new"
+    assert len(api.calls) == 2
+
+
+def test_resolve_guild_fetches_when_cache_empty():
+    api = FakeApi().queue(200, [{"id": "1", "name": "my server"}])
+    got = Resolver(api, {}).resolve_guild("my server")
+    assert got == {"id": "1", "name": "my server"}
+    assert api.calls == [("GET", "/users/@me/guilds", None)]
+
+
+def test_resolve_channel_fetches_when_guild_not_cached():
+    api = FakeApi().queue(200, [{"id": "10", "name": "general", "type": 0}])
+    got = Resolver(api, {}).resolve_channel("7", "general")
+    assert got["id"] == "10"
+    assert api.calls == [("GET", "/guilds/7/channels", None)]
+
+
+def test_resolver_mutates_caller_cache_in_place():
+    # The owner persists ``resolver.cache`` on exit, so it must be the same dict.
+    api = FakeApi().queue(200, [{"id": "1", "name": "srv"}])
+    cache = {}
+    r = Resolver(api, cache)
+
+    r.guilds()
+
+    assert r.cache is cache
+    assert cache["guilds"] == [{"id": "1", "name": "srv"}]
+
+
+# --------------------------------------------------------------------------
+# Cache shape helpers
+# --------------------------------------------------------------------------
+
+
+def test_empty_cache_shape():
+    assert empty_cache() == {"guilds": None, "channels": {}}
+
+
+def test_empty_cache_returns_fresh_dict_each_time():
+    a, b = empty_cache(), empty_cache()
+    assert a is not b
+    assert a["channels"] is not b["channels"]
+
+
+def test_resolver_without_cache_starts_from_empty_cache():
+    assert Resolver(NoApi(), None).cache == empty_cache()
+    assert Resolver(NoApi()).cache == empty_cache()
+
+
+def test_normalize_cache_repairs_bad_types_in_place():
+    cache = {"guilds": "bad", "channels": []}
+    out = normalize_cache(cache)
+    assert out is cache
+    assert cache == {"guilds": None, "channels": {}}
+
+
+def test_normalize_cache_fills_missing_keys():
+    assert normalize_cache({}) == {"guilds": None, "channels": {}}
