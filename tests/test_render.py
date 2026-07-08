@@ -121,3 +121,40 @@ def test_terminal_marks_edited_messages_only():
 
 def test_terminal_attachment_line_includes_human_size():
     assert "📎 a.png (2.0KB): http://x/a.png" in _render(MESSAGES)
+
+
+def test_terminal_reaction_summary():
+    assert "👍x3" in _render(MESSAGES)
+
+
+def test_terminal_empty_list_prints_placeholder():
+    out = _render([], title="Room")
+    assert "(no messages)" in out
+    assert "Room" in out
+
+
+def test_terminal_attachment_only_message():
+    msg = {
+        "id": "3",
+        "author": {"username": "carl"},
+        "content": "",
+        "timestamp": None,
+        "attachments": [{"filename": "f.txt", "url": "http://x/f.txt"}],
+    }
+    out = _render([msg])
+    assert "carl" in out
+    assert "📎 f.txt: http://x/f.txt" in out
+
+
+# --------------------------------------------------------------------------
+# export_to_file / exporters registry
+# --------------------------------------------------------------------------
+
+
+def test_export_markdown_file(tmp_path):
+    path = tmp_path / "out.md"
+    assert export_to_file(MESSAGES, str(path), "md", title="Room") == 2
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("# Room\n")
+    assert text.index("first") < text.index("second")
+    assert text == to_markdown(MESSAGES, title="Room")
