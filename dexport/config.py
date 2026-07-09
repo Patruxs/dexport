@@ -142,3 +142,36 @@ class Settings:
     def save(self, paths: Paths | None = None) -> None:
         paths = paths or Paths.default()
         _write_json(paths.config, self.to_dict())
+
+
+# --------------------------------------------------------------------------
+# Resolver cache
+# --------------------------------------------------------------------------
+
+
+def load_cache(paths: Paths | None = None) -> dict[str, Any]:
+    """Raw cache dict (``{}`` when missing/corrupt); the resolver fills in keys."""
+    paths = paths or Paths.default()
+    return _read_json(paths.cache)
+
+
+def save_cache(cache: Mapping[str, Any], paths: Paths | None = None) -> None:
+    paths = paths or Paths.default()
+    _write_json(paths.cache, cache)
+
+
+# --------------------------------------------------------------------------
+# JSON file helpers
+# --------------------------------------------------------------------------
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    """Parse ``path`` as a JSON object; missing/corrupt/non-object → ``{}``."""
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        pass
+    return {}
