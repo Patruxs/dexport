@@ -175,3 +175,21 @@ def _read_json(path: Path) -> dict[str, Any]:
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         pass
     return {}
+
+
+def _write_json(path: Path, data: Mapping[str, Any]) -> None:
+    """Atomically write ``data`` as pretty JSON, creating the directory."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def _coerce(cast: type[_Num], value: Any, default: _Num) -> _Num:
+    if value is None:
+        return default
+    try:
+        return cast(value)
+    except (TypeError, ValueError):
+        return default
