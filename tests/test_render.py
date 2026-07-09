@@ -181,3 +181,26 @@ def test_export_unknown_format_raises_and_writes_nothing(tmp_path):
     with pytest.raises(ValueError, match="'xml'"):
         export_to_file(MESSAGES, str(path), "xml")
     assert not path.exists()
+
+
+def test_export_empty_list_returns_zero(tmp_path):
+    path = tmp_path / "empty.md"
+    assert export_to_file([], str(path), "md") == 0
+    assert "_Exported 0 messages._" in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("fmt", "func"),
+    [("md", to_markdown), ("markdown", to_markdown), ("json", to_json), ("JSON", to_json)],
+)
+def test_get_exporter(fmt, func):
+    assert get_exporter(fmt) is func
+
+
+def test_get_exporter_unknown_lists_known_formats():
+    with pytest.raises(ValueError, match=r"'nope'.*json.*markdown.*md"):
+        get_exporter("nope")
+
+
+def test_every_exporter_has_an_extension():
+    assert set(EXPORTERS) <= set(EXPORT_EXTENSIONS)
