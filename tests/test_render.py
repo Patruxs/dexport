@@ -158,3 +158,26 @@ def test_export_markdown_file(tmp_path):
     assert text.startswith("# Room\n")
     assert text.index("first") < text.index("second")
     assert text == to_markdown(MESSAGES, title="Room")
+
+
+def test_export_json_file(tmp_path):
+    path = tmp_path / "out.json"
+    assert export_to_file(MESSAGES, str(path), "json") == 2
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert [m["id"] for m in data] == ["1", "2"]
+    assert data[1] == MESSAGES[0]
+
+
+@pytest.mark.parametrize("fmt", ["MD", "Markdown", "mArKdOwN", "JSON"])
+def test_export_format_is_case_insensitive(tmp_path, fmt):
+    path = tmp_path / "out"
+    export_to_file(MESSAGES, str(path), fmt, title="Room")
+    expected = get_exporter(fmt.lower())(MESSAGES, "Room")
+    assert path.read_text(encoding="utf-8") == expected
+
+
+def test_export_unknown_format_raises_and_writes_nothing(tmp_path):
+    path = tmp_path / "out.xml"
+    with pytest.raises(ValueError, match="'xml'"):
+        export_to_file(MESSAGES, str(path), "xml")
+    assert not path.exists()
