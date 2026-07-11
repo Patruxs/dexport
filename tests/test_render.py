@@ -121,3 +121,86 @@ def test_terminal_marks_edited_messages_only():
 
 def test_terminal_attachment_line_includes_human_size():
     assert "📎 a.png (2.0KB): http://x/a.png" in _render(MESSAGES)
+
+
+def test_terminal_reaction_summary():
+    assert "👍x3" in _render(MESSAGES)
+
+
+def test_terminal_empty_list_prints_placeholder():
+    out = _render([], title="Room")
+    assert "(no messages)" in out
+    assert "Room" in out
+
+
+def test_terminal_attachment_only_message():
+    msg = {
+        "id": "3",
+        "author": {"username": "carl"},
+        "content": "",
+        "timestamp": None,
+        "attachments": [{"filename": "f.txt", "url": "http://x/f.txt"}],
+    }
+    out = _render([msg])
+    assert "carl" in out
+    assert "📎 f.txt: http://x/f.txt" in out
+
+
+# --------------------------------------------------------------------------
+# export_to_file / exporters registry
+# --------------------------------------------------------------------------
+
+
+def test_export_markdown_file(tmp_path):
+    path = tmp_path / "out.md"
+    assert export_to_file(MESSAGES, str(path), "md", title="Room") == 2
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("# Room\n")
+    assert text.index("first") < text.index("second")
+    assert text == to_markdown(MESSAGES, title="Room")
+
+
+def test_export_json_file(tmp_path):
+    path = tmp_path / "out.json"
+    assert export_to_file(MESSAGES, str(path), "json") == 2
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert [m["id"] for m in data] == ["1", "2"]
+    assert data[1] == MESSAGES[0]
+
+
+@pytest.mark.parametrize("fmt", ["MD", "Markdown", "mArKdOwN", "JSON"])
+def test_export_format_is_case_insensitive(tmp_path, fmt):
+    path = tmp_path / "out"
+    export_to_file(MESSAGES, str(path), fmt, title="Room")
+    expected = get_exporter(fmt.lower())(MESSAGES, "Room")
+    assert path.read_text(encoding="utf-8") == expected
+
+
+def test_export_unknown_format_raises_and_writes_nothing(tmp_path):
+    path = tmp_path / "out.xml"
+    with pytest.raises(ValueError, match="'xml'"):
+        export_to_file(MESSAGES, str(path), "xml")
+    assert not path.exists()
+
+
+def test_export_empty_list_returns_zero(tmp_path):
+    path = tmp_path / "empty.md"
+    assert export_to_file([], str(path), "md") == 0
+    assert "_Exported 0 messages._" in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("fmt", "func"),
+    [("md", to_markdown), ("markdown", to_markdown), ("json", to_json), ("JSON", to_json)],
+)
+def test_get_exporter(fmt, func):
+    assert get_exporter(fmt) is func
+
+
+def test_get_exporter_unknown_lists_known_formats():
+    with pytest.raises(ValueError, match=r"'nope'.*json.*markdown.*md"):
+        get_exporter("nope")
+
+
+def test_every_exporter_has_an_extension():
+    assert set(EXPORTERS) <= set(EXPORT_EXTENSIONS)
