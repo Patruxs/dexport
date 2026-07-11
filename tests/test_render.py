@@ -204,3 +204,84 @@ def test_get_exporter_unknown_lists_known_formats():
 
 def test_every_exporter_has_an_extension():
     assert set(EXPORTERS) <= set(EXPORT_EXTENSIONS)
+
+
+@pytest.mark.parametrize("fmt", sorted(EXPORTERS))
+def test_every_registered_format_exports(tmp_path, fmt):
+    path = tmp_path / f"out.{EXPORT_EXTENSIONS[fmt]}"
+    assert export_to_file(MESSAGES, str(path), fmt, title="Room") == 2
+    assert path.stat().st_size > 0
+
+
+# --------------------------------------------------------------------------
+# Formatting helpers
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("iso", "expected"),
+    [
+        ("2024-01-01T12:05:00Z", "2024-01-01 12:05"),
+        ("2024-01-01T12:05:00+00:00", "2024-01-01 12:05"),
+        ("2024-01-01T12:05:00.123000+00:00", "2024-01-01 12:05"),
+        ("not a date", "not a date"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_format_timestamp(iso, expected):
+    assert format_timestamp(iso) == expected
+
+
+@pytest.mark.parametrize(
+    ("author", "expected"),
+    [
+        ({"global_name": "Bob", "username": "bob", "id": "1"}, "Bob"),
+        ({"global_name": None, "username": "alice", "id": "1"}, "alice"),
+        ({"global_name": "", "username": "alice"}, "alice"),
+        ({"id": "42"}, "42"),
+        ({}, "unknown"),
+        (None, "unknown"),
+    ],
+)
+def test_display_name_fallbacks(author, expected):
+    assert display_name(author) == expected
+
+
+def test_summarize_author():
+    assert summarize_author({"username": "alice", "global_name": "Alice"}) == "Alice (@alice)"
+    assert summarize_author({"username": "bob"}) == "@bob"
+
+
+def test_summarize_author_collapses_identical_names():
+    assert summarize_author({"username": "bob", "global_name": "bob"}) == "@bob"
+
+
+def test_summarize_author_without_username_uses_display_name():
+    assert summarize_author({"id": "42"}) == "42"
+
+
+def test_attachment_lines_omit_size_when_unknown():
+    msg = {"attachments": [{"filename": "a.bin", "url": "u"}, {"url": "v", "size": "big"}]}
+    assert attachment_lines(msg) == ["a.bin: u", "file: v"]
+
+
+def test_attachment_lines_tolerate_missing_or_null():
+    assert attachment_lines({}) == []
+    assert attachment_lines({"attachments": None}) == []
+
+
+def test_reaction_summary_joins_and_handles_missing_emoji():
+    msg = {"reactions": [{"emoji": {"name": "👍"}, "count": 3}, {"emoji": None, "count": 1}, {}]}
+    assert reaction_summary(msg) == "👍x3  ?x1  ?x0"
+
+
+def test_reaction_summary_empty():
+    assert reaction_summary({}) == ""
+    assert reaction_summary({"reactions": None}) == ""
+
+
+def test_oldest_first_reverses_without_mutating():
+    original = list(MESSAGES)
+    assert [m["id"] for m in oldest_first(MESSAGES)] == ["1", "2"]
+    assert original == MESSAGES
