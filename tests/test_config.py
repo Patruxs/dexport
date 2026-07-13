@@ -67,3 +67,37 @@ def test_settings_corrupt_file_gives_defaults(tmp_path):
     paths = Paths(tmp_path)
     paths.config.write_text("{not json", encoding="utf-8")
     assert Settings.load_file(paths) == Settings()
+
+
+def test_configure_does_not_persist_env_override(tmp_path, monkeypatch):
+    # Regression: `configure --binary /x` with DEXPORT_PORT set must NOT bake
+    # the transient env port into config.json.
+    paths = Paths(tmp_path)
+    monkeypatch.setenv("DEXPORT_PORT", "5000")
+
+    # Simulate what the `configure` command does.
+    conf = Settings.load_file(paths)
+    conf.discord_binary = "/x"
+    conf.save(paths)
+
+    on_disk = json.loads(paths.config.read_text(encoding="utf-8"))
+    assert on_disk["discord_binary"] == "/x"
+    assert on_disk["port"] == DEFAULT_CDP_PORT  # not 5000 from the env
+
+    # But the *effective* runtime config still honours the env override.
+    assert Settings.load(paths).port == 5000
+
+
+def test_env_overrides_are_validated():
+    base = Settings()
+    assert base.with_env_overrides({"DEXPORT_PORT": "1234"}).port == 1234
+    assert base.with_env_overrides({"DEXPORT_PORT": "abc"}).port == DEFAULT_CDP_PORT
+    assert base.with_env_overrides({"DEXPORT_DISCORD_BINARY": ""}).discord_binary is None
+    assert base.with_env_overrides({"DEXPORT_DISCORD_BINARY": "/d"}).discord_binary == "/d"
+    assert base.with_env_overrides({}) is base
+
+
+def test_env_overrides_explicit_env_ignores_os_environ(monkeypatch):
+    monkeypatch.setenv("DEXPORT_PORT", "7777")
+    assert Settings().with_env_overrides({}).port == DEFAULT_CDP_PORT
+    assert Settings().with_env_overrides().port == 7777
