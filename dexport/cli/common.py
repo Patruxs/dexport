@@ -57,3 +57,80 @@ class ConnectionOptions:
     def settings(self, paths: Paths | None = None) -> Settings:
         """Effective settings: **CLI flag > env var > config.json > default**."""
         return Settings.load(paths).with_overrides(port=self.port, discord_binary=self.binary)
+
+
+TOS_NOTICE = (
+    "dexport automates a [b]user[/b] account, which Discord's Terms of Service "
+    "do not allow. The penalty for a self-bot is account termination, and it is "
+    "permanent.\n\n"
+    "Keep it personal and low-volume — your own history, your own messages — "
+    "and use it at your own risk. This notice is shown once; the full caveat is "
+    "in the README."
+)
+
+
+def warn_tos_once(paths: Paths | None = None) -> None:
+    """Print the self-bot notice the first time dexport drives the account.
+
+    A marker file under ``$DEXPORT_HOME`` keeps it to once per install — the
+    condensed version stays in ``dexport --help`` for every run. Written to
+    stderr so it never contaminates piped output.
+    """
+    marker = (paths or Paths.default()).notice
+    if marker.exists():
+        return
+    err_console.print(
+        Panel(TOS_NOTICE, title="[yellow]Before you use this[/yellow]", border_style="yellow")
+    )
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("Terms-of-Service notice shown.\n", encoding="utf-8")
+    except OSError:
+        pass  # An unwritable home just means the notice shows again next time.
+
+
+@contextmanager
+def connect(ctx: typer.Context) -> Iterator[Dexport]:
+    """Acquire a Discord session for the duration of the block.
+
+    Any :class:`DexportError` raised while acquiring *or inside the block* is
+    reported as a one-line error with exit code 1; the session is always
+    released and the resolver cache saved.
+    """
+    warn_tos_once()
+    opts: ConnectionOptions = ctx.obj or ConnectionOptions()
+    try:
+        with Dexport.acquire(settings=opts.settings(), force_restart=opts.restart) as dx:
+            yield dx
+    except DexportError as exc:
+        fail(str(exc))
+
+
+# --------------------------------------------------------------------------
+# Target selection (guild/channel by name or ID)
+# --------------------------------------------------------------------------
+
+GuildOpt = Annotated[
+    str | None,
+    typer.Option("-g", "--guild", help="Guild (server) name; fuzzy, diacritics-insensitive."),
+]
+ChannelOpt = Annotated[
+    str | None,
+    typer.Option("-c", "--channel", help="Channel name; fuzzy, diacritics-insensitive."),
+]
+GuildIdOpt = Annotated[str | None, typer.Option("--guild-id", help="Guild ID (skips lookup).")]
+ChannelIdOpt = Annotated[
+    str | None, typer.Option("--channel-id", help="Channel ID (skips lookup).")
+]
+YesOpt = Annotated[bool, typer.Option("-y", "--yes", help="Skip confirmation.")]
+DryRunOpt = Annotated[bool, typer.Option("--dry-run", help="Show the request, don't send.")]
+
+
+@dataclass(frozen=True)
+class Target:
+    """Where a command should act. IDs win over names (for scripting)."""
+
+    guild: str | None = None
+    channel: str | None = None
+    guild_id: str | None = None
+    channel_id: str | None = None
