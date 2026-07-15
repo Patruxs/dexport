@@ -112,3 +112,41 @@ def test_acquire_gives_api_the_captured_headers(pipeline):
     dx = Dexport.acquire(settings=_settings())
     assert dx.api.headers == {"authorization": "tok", "x-super-properties": "abc"}
     assert dx.api.session is pipeline.session
+
+
+def test_acquire_configures_limiter_floor_from_settings(pipeline):
+    dx = Dexport.acquire(settings=_settings(floor_delay_min=0.1, floor_delay_max=0.4))
+    assert dx.api.limiter.floor_min == 0.1
+    assert dx.api.limiter.floor_max == 0.4
+
+
+def test_acquire_loads_resolver_cache_from_dexport_home(pipeline, dexport_home):
+    save_cache(CACHE)
+    assert (dexport_home / "cache.json").exists()
+
+    dx = Dexport.acquire(settings=_settings())
+    assert dx.resolver.cache["guilds"] == CACHE["guilds"]
+    assert dx.resolver.api is dx.api
+
+
+def test_acquire_with_no_cache_file_starts_empty(pipeline):
+    dx = Dexport.acquire(settings=_settings())
+    assert dx.resolver.cache == {"guilds": None, "channels": {}}
+
+
+def test_acquire_uses_capture_headers_as_the_refresh_hook(pipeline):
+    """The refresh hook must be the real capture step, not a stale copy."""
+    pipeline.headers = {"authorization": "old"}
+    pipeline.session = FakeClientSession(
+        [
+            resp(401, json.dumps({"message": "401: Unauthorized"})),
+            resp(200, json.dumps({"id": "42"})),
+        ]
+    )
+    dx = Dexport.acquire(settings=_settings())
+    pipeline.headers = {"authorization": "new"}
+
+    assert dx.api.me() == {"id": "42"}
+    # capture_headers ran once during acquire and once for the 401.
+    assert pipeline.capture_calls == [pipeline.session, pipeline.session]
+    assert pipeline.session.calls[1]["headers"]["authorization"] == "new"
