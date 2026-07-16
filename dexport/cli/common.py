@@ -166,3 +166,34 @@ def resolve_channel(dx: Dexport, target: Target) -> tuple[str, str]:
     )
     c = dx.resolver.resolve_channel(gid, target.channel)
     return c["id"], f"{glabel} #{c.get('name', c['id'])}"
+
+
+# --------------------------------------------------------------------------
+# Write verbs
+# --------------------------------------------------------------------------
+
+
+def human_pause(
+    lo: float = 0.4,
+    hi: float = 1.2,
+    *,
+    sleeper: Callable[[float], None] = time.sleep,
+    jitter: Callable[[float, float], float] = random.uniform,
+) -> None:
+    """A short random delay so scripted writes don't fire at machine speed."""
+    sleeper(jitter(lo, hi))
+
+
+def preview(req: ApiRequest) -> None:
+    """Print the exact request a write verb would send (``--dry-run``)."""
+    console.rule("dry run")
+    console.print(f"[bold]{req.method}[/bold] {req.url}")
+    if req.body is not None:
+        console.print(json.dumps(req.body, ensure_ascii=False, indent=2))
+
+
+def confirm_or_exit(action: str, target: str, yes: bool) -> None:
+    if yes:
+        return
+    if not typer.confirm(f"{action} in {target}?", default=False):
+        raise typer.Exit(0)
