@@ -134,3 +134,35 @@ class Target:
     channel: str | None = None
     guild_id: str | None = None
     channel_id: str | None = None
+
+
+def resolve_guild(
+    dx: Dexport,
+    guild: str | None,
+    guild_id: str | None,
+    *,
+    missing: str = "Provide -g/--guild or --guild-id.",
+) -> tuple[str, str]:
+    """Return ``(guild_id, human_label)``."""
+    if guild_id is not None:
+        return guild_id, guild_id
+    if not guild:
+        fail(missing)
+    g = dx.resolver.resolve_guild(guild)
+    return g["id"], g.get("name", g["id"])
+
+
+def resolve_channel(dx: Dexport, target: Target) -> tuple[str, str]:
+    """Return ``(channel_id, human_label)``."""
+    if target.channel_id:
+        return target.channel_id, f"channel {target.channel_id}"
+    if not target.channel:
+        fail("Provide a channel with -c/--channel or --channel-id.")
+    gid, glabel = resolve_guild(
+        dx,
+        target.guild,
+        target.guild_id,
+        missing="Provide a guild with -g/--guild or --guild-id (or use --channel-id).",
+    )
+    c = dx.resolver.resolve_channel(gid, target.channel)
+    return c["id"], f"{glabel} #{c.get('name', c['id'])}"
