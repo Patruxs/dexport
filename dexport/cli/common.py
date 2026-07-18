@@ -197,3 +197,45 @@ def confirm_or_exit(action: str, target: str, yes: bool) -> None:
         return
     if not typer.confirm(f"{action} in {target}?", default=False):
         raise typer.Exit(0)
+
+
+def run_write(
+    ctx: typer.Context,
+    target: Target,
+    *,
+    build: Callable[[str], ApiRequest],
+    confirm: str,
+    done: Callable[[Any, str], str],
+    yes: bool,
+    dry_run: bool,
+) -> None:
+    """The single code path behind every write verb.
+
+    ``build(channel_id)`` returns the request; the *same* object is previewed
+    for ``--dry-run`` and executed for real, so they can never disagree.
+    ``done(response_json, label)`` renders the success line.
+
+    With ``--dry-run --channel-id`` nothing is resolved, so Discord is never
+    contacted (nor launched).
+    """
+    if dry_run and target.channel_id:
+        preview(build(target.channel_id))
+        return
+    with connect(ctx) as dx:
+        channel_id, label = resolve_channel(dx, target)
+        req = build(channel_id)
+        if dry_run:
+            preview(req)
+            return
+        confirm_or_exit(confirm, label, yes)
+        human_pause()
+        result = _json_or_none(dx.api.execute(req))
+    console.print(done(result, label))
+
+
+def _json_or_none(resp: ApiResponse) -> Any:
+    """Parsed 2xx body, or ``None`` when it is empty (204) or not JSON."""
+    try:
+        return resp.json()
+    except ApiError:
+        return None
