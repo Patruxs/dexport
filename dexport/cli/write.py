@@ -79,3 +79,76 @@ def reply(
         yes=yes,
         dry_run=dry_run,
     )
+
+
+@commands.command()
+def react(
+    ctx: typer.Context,
+    to: Annotated[str, typer.Option("--to", help="Message ID to react to.")],
+    emoji: Annotated[
+        str, typer.Option("-e", "--emoji", help="Unicode emoji or name:id / <:name:id>.")
+    ],
+    guild: GuildOpt = None,
+    channel: ChannelOpt = None,
+    guild_id: GuildIdOpt = None,
+    channel_id: ChannelIdOpt = None,
+    yes: YesOpt = False,
+    dry_run: DryRunOpt = False,
+) -> None:
+    """Add a reaction to a message."""
+    run_write(
+        ctx,
+        Target(guild, channel, guild_id, channel_id),
+        build=lambda cid: add_reaction_request(cid, to, emoji),
+        confirm=f"React {emoji} to {to}",
+        done=lambda _r, label: f"[green]Reacted[/green] {emoji} to {to} in {label}",
+        yes=yes,
+        dry_run=dry_run,
+    )
+
+
+@commands.command()
+def edit(
+    ctx: typer.Context,
+    to: Annotated[str, typer.Option("--to", help="Message ID to edit (must be yours).")],
+    message: MessageOpt,
+    guild: GuildOpt = None,
+    channel: ChannelOpt = None,
+    guild_id: GuildIdOpt = None,
+    channel_id: ChannelIdOpt = None,
+    yes: YesOpt = False,
+    dry_run: DryRunOpt = False,
+) -> None:
+    """Edit one of your own messages."""
+    run_write(
+        ctx,
+        Target(guild, channel, guild_id, channel_id),
+        build=lambda cid: edit_message_request(cid, to, message),
+        confirm=f"Edit message {to}",
+        done=lambda _r, label: f"[green]Edited[/green] message {to} in {label}",
+        yes=yes,
+        dry_run=dry_run,
+    )
+
+
+@commands.command()
+def delete(
+    ctx: typer.Context,
+    to: Annotated[str, typer.Option("--to", help="Message ID to delete.")],
+    guild: GuildOpt = None,
+    channel: ChannelOpt = None,
+    guild_id: GuildIdOpt = None,
+    channel_id: ChannelIdOpt = None,
+    yes: YesOpt = False,
+    dry_run: DryRunOpt = False,
+) -> None:
+    """Delete a message (yours, or any if you have permission)."""
+    run_write(
+        ctx,
+        Target(guild, channel, guild_id, channel_id),
+        build=lambda cid: delete_message_request(cid, to),
+        confirm=f"Delete message {to}",
+        done=lambda _r, label: f"[green]Deleted[/green] message {to} in {label}",
+        yes=yes,
+        dry_run=dry_run,
+    )
