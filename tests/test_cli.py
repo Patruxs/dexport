@@ -267,3 +267,52 @@ def test_dry_run_previews_exactly_the_builder_request(
     assert url == DISCORD_API_BASE + expected.path
     assert body == expected.body
     assert forbid_acquire == []
+
+
+def test_dry_run_send_shows_full_url_and_json_body(runner, forbid_acquire):
+    result = runner.invoke(app, ["send", "-m", "hi", "--dry-run", "--channel-id", CHANNEL_ID])
+    assert result.exit_code == 0, result.output
+    assert f"POST {MESSAGES_URL}" in result.output
+    assert '"content": "hi"' in result.output
+    assert forbid_acquire == []
+
+
+def test_dry_run_reply_body_has_message_reference(runner, forbid_acquire):
+    result = runner.invoke(
+        app, ["reply", "--to", "42", "-m", "hi", "--dry-run", "--channel-id", CHANNEL_ID]
+    )
+    assert result.exit_code == 0, result.output
+    _method, url, body = parse_preview(result.output)
+    assert url == MESSAGES_URL
+    assert body == {
+        "content": "hi",
+        "message_reference": {
+            "channel_id": CHANNEL_ID,
+            "message_id": "42",
+            "fail_if_not_exists": False,
+        },
+    }
+    assert forbid_acquire == []
+
+
+@pytest.mark.parametrize(
+    ("emoji", "segment"),
+    [("👍", "%F0%9F%91%8D"), ("<:party:987>", "party%3A987"), ("<a:wave:55>", "wave%3A55")],
+)
+def test_dry_run_react_percent_encodes_emoji(runner, forbid_acquire, emoji, segment):
+    result = runner.invoke(
+        app, ["react", "--to", "42", "-e", emoji, "--dry-run", "--channel-id", CHANNEL_ID]
+    )
+    assert result.exit_code == 0, result.output
+    method, url, body = parse_preview(result.output)
+    assert method == "PUT"
+    assert url == f"{MESSAGES_URL}/42/reactions/{segment}/@me"
+    assert body is None
+    assert forbid_acquire == []
+
+
+def test_dry_run_delete_has_no_body(runner, forbid_acquire):
+    result = runner.invoke(app, ["delete", "--to", "42", "--dry-run", "--channel-id", CHANNEL_ID])
+    assert result.exit_code == 0, result.output
+    assert parse_preview(result.output) == ("DELETE", f"{MESSAGES_URL}/42", None)
+    assert forbid_acquire == []
