@@ -316,3 +316,39 @@ def test_dry_run_delete_has_no_body(runner, forbid_acquire):
     assert result.exit_code == 0, result.output
     assert parse_preview(result.output) == ("DELETE", f"{MESSAGES_URL}/42", None)
     assert forbid_acquire == []
+
+
+def test_dry_run_with_channel_name_resolves_but_sends_nothing(runner, fake_dx):
+    result = runner.invoke(
+        app, ["send", "-g", "cu dem", "-c", "luoi chat tong", "-m", "hi", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert parse_preview(result.output) == (
+        "POST",
+        f"{DISCORD_API_BASE}/channels/10/messages",
+        {"content": "hi"},
+    )
+    assert fake_dx.api.calls == []
+    assert fake_dx.pauses == []
+    assert len(fake_dx.acquire_calls) == 1
+
+
+# --------------------------------------------------------------------------
+# 4. Target validation
+# --------------------------------------------------------------------------
+
+
+def test_send_without_channel_fails(runner, fake_dx):
+    result = runner.invoke(app, ["send", "-m", "hi", "--dry-run"])
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "Provide a channel" in result.output
+    assert fake_dx.api.calls == []
+    assert fake_dx.closed == 1  # the session is released even on failure
+
+
+def test_send_with_channel_name_but_no_guild_fails(runner, fake_dx):
+    result = runner.invoke(app, ["send", "-c", "luoi chat tong", "-m", "hi", "--yes"])
+    assert result.exit_code == 1
+    assert "Provide a guild" in result.output
+    assert fake_dx.api.calls == []
