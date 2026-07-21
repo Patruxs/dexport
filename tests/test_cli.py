@@ -352,3 +352,52 @@ def test_send_with_channel_name_but_no_guild_fails(runner, fake_dx):
     assert result.exit_code == 1
     assert "Provide a guild" in result.output
     assert fake_dx.api.calls == []
+
+
+def test_channels_without_guild_fails(runner, fake_dx):
+    result = runner.invoke(app, ["channels"])
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "Provide -g/--guild" in result.output
+
+
+# --------------------------------------------------------------------------
+# 5. configure
+# --------------------------------------------------------------------------
+
+CONFIG_KEYS = {"port", "discord_binary", "floor_delay_min", "floor_delay_max"}
+
+
+def _shown_config(output: str) -> dict[str, Any]:
+    """The JSON object ``configure --show`` prints (before the ``config:`` line)."""
+    return json.loads(output[: output.rindex("}") + 1])
+
+
+def test_configure_show_prints_defaults_and_path(runner, dexport_home):
+    result = runner.invoke(app, ["configure", "--show"])
+    assert result.exit_code == 0, result.output
+    shown = _shown_config(result.output)
+    assert set(shown) == CONFIG_KEYS
+    assert shown["port"] == DEFAULT_CDP_PORT
+    assert shown["discord_binary"] is None
+    assert f"config: {dexport_home / 'config.json'}" in result.output
+    assert not (dexport_home / "config.json").exists()  # --show alone writes nothing
+
+
+def test_configure_without_flags_behaves_like_show(runner):
+    result = runner.invoke(app, ["configure"])
+    assert result.exit_code == 0, result.output
+    assert set(_shown_config(result.output)) == CONFIG_KEYS
+    assert "config:" in result.output
+
+
+def test_configure_saves_port_and_binary(runner, dexport_home):
+    result = runner.invoke(app, ["configure", "--port", "4321", "--binary", "/x"])
+    assert result.exit_code == 0, result.output
+    assert "Saved" in result.output
+    saved = json.loads((dexport_home / "config.json").read_text(encoding="utf-8"))
+    assert saved["port"] == 4321
+    assert saved["discord_binary"] == "/x"
+
+    shown = _shown_config(runner.invoke(app, ["configure", "--show"]).output)
+    assert (shown["port"], shown["discord_binary"]) == (4321, "/x")
