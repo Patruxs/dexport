@@ -206,3 +206,64 @@ def test_version_flag_prints_version(runner):
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
     assert result.output.strip() == f"dexport {__version__}"
+
+
+def test_no_args_shows_usage_without_touching_discord(runner, forbid_acquire):
+    # The exit code here is the CLI framework's choice (it has changed across
+    # Typer/click releases); what dexport owns is that help is shown and no
+    # command runs.
+    result = runner.invoke(app, [])
+    assert "Usage:" in result.output
+    assert "Commands" in result.output
+    assert forbid_acquire == []
+
+
+def test_missing_required_option_is_a_usage_error(runner, forbid_acquire):
+    result = runner.invoke(app, ["send", "--dry-run", "--channel-id", CHANNEL_ID])
+    assert result.exit_code == 2
+    assert "Missing option" in result.output
+    assert forbid_acquire == []
+
+
+# --------------------------------------------------------------------------
+# 3. --dry-run --channel-id never touches Discord
+# --------------------------------------------------------------------------
+
+DRY_RUN_CASES = [
+    pytest.param(["send", "-m", "hi"], send_message_request(CHANNEL_ID, "hi"), id="send"),
+    pytest.param(
+        ["reply", "--to", "42", "-m", "hi"],
+        send_message_request(CHANNEL_ID, "hi", reply_to="42"),
+        id="reply",
+    ),
+    pytest.param(
+        ["react", "--to", "42", "-e", "👍"],
+        add_reaction_request(CHANNEL_ID, "42", "👍"),
+        id="react-unicode",
+    ),
+    pytest.param(
+        ["react", "--to", "42", "-e", "<:party:987>"],
+        add_reaction_request(CHANNEL_ID, "42", "<:party:987>"),
+        id="react-custom",
+    ),
+    pytest.param(
+        ["edit", "--to", "42", "-m", "fixed"],
+        edit_message_request(CHANNEL_ID, "42", "fixed"),
+        id="edit",
+    ),
+    pytest.param(["delete", "--to", "42"], delete_message_request(CHANNEL_ID, "42"), id="delete"),
+]
+
+
+@pytest.mark.parametrize(("args", "expected"), DRY_RUN_CASES)
+def test_dry_run_previews_exactly_the_builder_request(
+    runner, forbid_acquire, args: list[str], expected: ApiRequest
+):
+    result = runner.invoke(app, [*args, "--dry-run", "--channel-id", CHANNEL_ID])
+    assert result.exit_code == 0, result.output
+    method, url, body = parse_preview(result.output)
+    assert method == expected.method
+    assert url == expected.url
+    assert url == DISCORD_API_BASE + expected.path
+    assert body == expected.body
+    assert forbid_acquire == []
