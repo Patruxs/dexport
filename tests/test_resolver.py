@@ -139,3 +139,59 @@ def test_guilds_second_call_does_not_fetch():
 
     assert second == first
     assert len(api.calls) == 1
+
+
+def test_guilds_refresh_refetches_and_replaces_cache():
+    api = (
+        FakeApi().queue(200, [{"id": "1", "name": "old"}]).queue(200, [{"id": "1", "name": "new"}])
+    )
+    r = Resolver(api, {})
+    r.guilds()
+
+    got = r.guilds(refresh=True)
+
+    assert got == [{"id": "1", "name": "new"}]
+    assert r.cache["guilds"] == got
+    assert len(api.calls) == 2
+
+
+def test_zero_guilds_caches_empty_list_and_does_not_refetch():
+    # Regression: the "already fetched" check must be ``is None``, not falsy,
+    # or an account in no guilds would hit the API on every call.
+    api = FakeApi().queue(200, [])
+    r = Resolver(api, {})
+
+    assert r.guilds() == []
+    assert r.cache["guilds"] == []
+    assert r.guilds() == []  # FakeApi would raise on a second request
+    assert len(api.calls) == 1
+
+
+def test_channels_fetches_and_stores_four_keys_keyed_by_guild():
+    api = FakeApi().queue(
+        200,
+        [
+            {
+                "id": "10",
+                "name": "general",
+                "type": 0,
+                "parent_id": "9",
+                "position": 3,
+                "topic": "chatter",
+                "nsfw": False,
+            }
+        ],
+    )
+    r = Resolver(api, {})
+
+    got = r.channels("1")
+
+    assert api.calls == [("GET", "/guilds/1/channels", None)]
+    assert got == [{"id": "10", "name": "general", "type": 0, "parent_id": "9"}]
+    assert r.cache["channels"] == {"1": got}
+
+
+def test_channels_missing_optional_fields_default_to_empty_or_none():
+    api = FakeApi().queue(200, [{"id": "10"}])
+    got = Resolver(api, {}).channels("1")
+    assert got == [{"id": "10", "name": "", "type": None, "parent_id": None}]
