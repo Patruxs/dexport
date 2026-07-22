@@ -195,3 +195,44 @@ def test_channels_missing_optional_fields_default_to_empty_or_none():
     api = FakeApi().queue(200, [{"id": "10"}])
     got = Resolver(api, {}).channels("1")
     assert got == [{"id": "10", "name": "", "type": None, "parent_id": None}]
+
+
+def test_channels_second_call_does_not_fetch():
+    api = FakeApi().queue(200, [{"id": "10", "name": "general", "type": 0}])
+    r = Resolver(api, {})
+
+    first = r.channels("1")
+    second = r.channels("1")
+
+    assert second == first
+    assert len(api.calls) == 1
+
+
+def test_channels_are_cached_per_guild():
+    api = (
+        FakeApi()
+        .queue(200, [{"id": "10", "name": "a", "type": 0}])
+        .queue(200, [{"id": "20", "name": "b", "type": 0}])
+    )
+    r = Resolver(api, {})
+
+    r.channels("1")
+    r.channels("2")
+    r.channels("1")
+
+    assert [path for _, path, _ in api.calls] == ["/guilds/1/channels", "/guilds/2/channels"]
+    assert set(r.cache["channels"]) == {"1", "2"}
+    assert r.cache["channels"]["2"] == [{"id": "20", "name": "b", "type": 0, "parent_id": None}]
+
+
+def test_channels_refresh_refetches():
+    api = (
+        FakeApi()
+        .queue(200, [{"id": "10", "name": "old", "type": 0}])
+        .queue(200, [{"id": "10", "name": "new", "type": 0}])
+    )
+    r = Resolver(api, {})
+    r.channels("1")
+
+    assert r.channels("1", refresh=True)[0]["name"] == "new"
+    assert len(api.calls) == 2
