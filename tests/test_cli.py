@@ -401,3 +401,54 @@ def test_configure_saves_port_and_binary(runner, dexport_home):
 
     shown = _shown_config(runner.invoke(app, ["configure", "--show"]).output)
     assert (shown["port"], shown["discord_binary"]) == (4321, "/x")
+
+
+def test_configure_never_persists_env_port(runner, dexport_home):
+    assert runner.invoke(app, ["configure", "--port", "4321"]).exit_code == 0
+
+    result = runner.invoke(app, ["configure", "--binary", "/x"], env={"DEXPORT_PORT": "5000"})
+    assert result.exit_code == 0, result.output
+    saved = json.loads((dexport_home / "config.json").read_text(encoding="utf-8"))
+    assert saved["port"] == 4321
+    assert saved["discord_binary"] == "/x"
+
+
+# --------------------------------------------------------------------------
+# 6. Commands that need Discord, through the fake
+# --------------------------------------------------------------------------
+
+
+def test_whoami_prints_account(runner, fake_dx):
+    fake_dx.api.queue(200, {"id": "42", "username": "pat", "global_name": "Pat"})
+    result = runner.invoke(app, ["whoami"])
+    assert result.exit_code == 0, result.output
+    assert "Logged in as Pat (@pat)" in result.output
+    assert "(42)" in result.output
+    assert fake_dx.api.calls == [("GET", "/users/@me", None)]
+    assert fake_dx.closed == 1
+
+
+def test_guilds_lists_cached_guilds_sorted_case_insensitively(runner, fake_dx):
+    fake_dx.resolver.cache["guilds"] = [
+        {"id": "2", "name": "beta"},
+        {"id": "3", "name": "Zeta"},
+        {"id": "1", "name": "Alpha"},
+    ]
+    result = runner.invoke(app, ["guilds"])
+    assert result.exit_code == 0, result.output
+    assert "3 guilds" in result.output
+    assert "1  Alpha" in result.output
+    positions = [result.output.index(name) for name in ("Alpha", "beta", "Zeta")]
+    assert positions == sorted(positions)
+    assert fake_dx.api.calls == []  # served from the cache
+
+
+def test_guilds_refresh_refetches_and_persists(runner, fake_dx):
+    fake_dx.api.queue(200, [{"id": "7", "name": "fresh"}])
+    result = runner.invoke(app, ["guilds", "--refresh"])
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("GET", "/users/@me/guilds", None)]
+    assert "7  fresh" in result.output
+    assert "random server" not in result.output
+    assert fake_dx.resolver.cache["guilds"] == [{"id": "7", "name": "fresh"}]
+    assert fake_dx.saved == 1
