@@ -236,3 +236,38 @@ def test_channels_refresh_refetches():
 
     assert r.channels("1", refresh=True)[0]["name"] == "new"
     assert len(api.calls) == 2
+
+
+def test_resolve_guild_fetches_when_cache_empty():
+    api = FakeApi().queue(200, [{"id": "1", "name": "my server"}])
+    got = Resolver(api, {}).resolve_guild("my server")
+    assert got == {"id": "1", "name": "my server"}
+    assert api.calls == [("GET", "/users/@me/guilds", None)]
+
+
+def test_resolve_channel_fetches_when_guild_not_cached():
+    api = FakeApi().queue(200, [{"id": "10", "name": "general", "type": 0}])
+    got = Resolver(api, {}).resolve_channel("7", "general")
+    assert got["id"] == "10"
+    assert api.calls == [("GET", "/guilds/7/channels", None)]
+
+
+def test_resolver_mutates_caller_cache_in_place():
+    # The owner persists ``resolver.cache`` on exit, so it must be the same dict.
+    api = FakeApi().queue(200, [{"id": "1", "name": "srv"}])
+    cache = {}
+    r = Resolver(api, cache)
+
+    r.guilds()
+
+    assert r.cache is cache
+    assert cache["guilds"] == [{"id": "1", "name": "srv"}]
+
+
+# --------------------------------------------------------------------------
+# Cache shape helpers
+# --------------------------------------------------------------------------
+
+
+def test_empty_cache_shape():
+    assert empty_cache() == {"guilds": None, "channels": {}}
