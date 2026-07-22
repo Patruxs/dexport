@@ -452,3 +452,31 @@ def test_guilds_refresh_refetches_and_persists(runner, fake_dx):
     assert "random server" not in result.output
     assert fake_dx.resolver.cache["guilds"] == [{"id": "7", "name": "fresh"}]
     assert fake_dx.saved == 1
+
+
+def test_channels_by_fuzzy_guild_name(runner, fake_dx):
+    result = runner.invoke(app, ["channels", "-g", "cu dem"])
+    assert result.exit_code == 0, result.output
+    assert "cú đêm: 3 channels" in result.output
+    for cid, name in (("10", "lười-chat-tổng"), ("11", "voice-hangout"), ("12", "thông-báo")):
+        assert f"{cid}  #{name}" in result.output
+    assert fake_dx.api.calls == []
+
+
+def test_channels_by_uncached_guild_id_fetches(runner, fake_dx):
+    fake_dx.api.queue(200, [{"id": "50", "name": "general", "type": 0}])
+    result = runner.invoke(app, ["channels", "--guild-id", "999"])
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("GET", "/guilds/999/channels", None)]
+    assert "999: 1 channels" in result.output
+    assert "50  #general" in result.output
+
+
+def test_read_renders_messages_oldest_first(runner, fake_dx):
+    fake_dx.api.queue(200, MESSAGES_NEWEST_FIRST)
+    result = runner.invoke(app, ["read", "--channel-id", CHANNEL_ID, "--limit", "5"])
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("GET", f"/channels/{CHANNEL_ID}/messages?limit=5", None)]
+    assert f"channel {CHANNEL_ID}" in result.output
+    assert result.output.index("alice") < result.output.index("bob")
+    assert result.output.index("first") < result.output.index("second")
