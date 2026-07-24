@@ -131,3 +131,20 @@ def test_with_overrides_binary_only():
 def test_with_overrides_both():
     got = Settings().with_overrides(port=1, discord_binary="/y")
     assert (got.port, got.discord_binary) == (1, "/y")
+
+
+def test_with_overrides_none_returns_same_object():
+    base = Settings()
+    assert base.with_overrides() is base
+    assert base.with_overrides(port=None, discord_binary=None) is base
+
+
+def test_with_overrides_port_zero_is_honoured():
+    # The check must be ``is not None``, not truthiness.
+    assert Settings(port=5).with_overrides(port=0).port == 0
+
+
+def test_with_overrides_does_not_mutate_original():
+    base = Settings()
+    base.with_overrides(port=1, discord_binary="/y")
+    assert base == Settings()
