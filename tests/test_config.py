@@ -101,3 +101,33 @@ def test_env_overrides_explicit_env_ignores_os_environ(monkeypatch):
     monkeypatch.setenv("DEXPORT_PORT", "7777")
     assert Settings().with_env_overrides({}).port == DEFAULT_CDP_PORT
     assert Settings().with_env_overrides().port == 7777
+
+
+def test_cache_roundtrip_and_missing(tmp_path):
+    paths = Paths(tmp_path)
+    assert load_cache(paths) == {}
+    save_cache({"guilds": [{"id": "1", "name": "x"}], "channels": {}}, paths)
+    assert load_cache(paths)["guilds"] == [{"id": "1", "name": "x"}]
+    assert not paths.cache.with_suffix(".json.tmp").exists()  # atomic write cleaned up
+
+
+# --------------------------------------------------------------------------
+# Settings.with_overrides (CLI flags)
+# --------------------------------------------------------------------------
+
+
+def test_with_overrides_port_only():
+    base = Settings(discord_binary="/x", floor_delay_min=0.1, floor_delay_max=0.2)
+    got = base.with_overrides(port=1)
+    assert got == Settings(port=1, discord_binary="/x", floor_delay_min=0.1, floor_delay_max=0.2)
+
+
+def test_with_overrides_binary_only():
+    base = Settings(port=5)
+    got = base.with_overrides(discord_binary="/y")
+    assert got == Settings(port=5, discord_binary="/y")
+
+
+def test_with_overrides_both():
+    got = Settings().with_overrides(port=1, discord_binary="/y")
+    assert (got.port, got.discord_binary) == (1, "/y")
