@@ -271,3 +271,21 @@ def test_resolver_mutates_caller_cache_in_place():
 
 def test_empty_cache_shape():
     assert empty_cache() == {"guilds": None, "channels": {}}
+
+
+def test_empty_cache_returns_fresh_dict_each_time():
+    a, b = empty_cache(), empty_cache()
+    assert a is not b
+    assert a["channels"] is not b["channels"]
+
+
+def test_resolver_without_cache_starts_from_empty_cache():
+    assert Resolver(NoApi(), None).cache == empty_cache()
+    assert Resolver(NoApi()).cache == empty_cache()
+
+
+def test_normalize_cache_repairs_bad_types_in_place():
+    cache = {"guilds": "bad", "channels": []}
+    out = normalize_cache(cache)
+    assert out is cache
+    assert cache == {"guilds": None, "channels": {}}
