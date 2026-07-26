@@ -186,3 +186,53 @@ def test_acquire_honours_explicit_paths_for_config_and_cache(pipeline, tmp_path,
     dx.close()
     assert load_cache(alt)["guilds"] == [{"id": "2", "name": "moved"}]
     assert not (dexport_home / "cache.json").exists()
+
+
+# --------------------------------------------------------------------------
+# acquire: failure paths
+# --------------------------------------------------------------------------
+
+
+def test_acquire_closes_session_when_header_capture_fails(pipeline):
+    pipeline.capture_error = HeaderCaptureError("Never observed an authorized /api request")
+    with pytest.raises(HeaderCaptureError, match="Never observed"):
+        Dexport.acquire(settings=_settings())
+    assert pipeline.session.closed
+
+
+def test_acquire_propagates_launcher_error_before_connecting(pipeline):
+    pipeline.ensure_error = LauncherError("Discord binary not found")
+    with pytest.raises(LauncherError, match="not found"):
+        Dexport.acquire(settings=_settings())
+    assert pipeline.connect_calls == []
+    assert pipeline.capture_calls == []
+    assert not pipeline.session.closed
+
+
+def test_acquire_closes_session_when_a_later_step_fails(pipeline, monkeypatch):
+    monkeypatch.setattr("dexport.client.load_cache", lambda paths: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        Dexport.acquire(settings=_settings())
+    assert pipeline.session.closed
+
+
+# --------------------------------------------------------------------------
+# close / save / context manager
+# --------------------------------------------------------------------------
+
+
+def test_close_persists_resolver_cache_and_closes_session(pipeline, dexport_home):
+    save_cache(CACHE)
+    dx = Dexport.acquire(settings=_settings())
+    dx.resolver.cache["guilds"] = [{"id": "9", "name": "brand new"}]
+    dx.resolver.cache["channels"]["9"] = [
+        {"id": "90", "name": "general", "type": 0, "parent_id": None}
+    ]
+
+    dx.close()
+
+    assert load_cache() == dx.resolver.cache
+    assert (
+        json.loads((dexport_home / "cache.json").read_text(encoding="utf-8")) == dx.resolver.cache
+    )
+    assert pipeline.session.closed
