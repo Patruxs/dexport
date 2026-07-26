@@ -148,3 +148,47 @@ def test_with_overrides_does_not_mutate_original():
     base = Settings()
     base.with_overrides(port=1, discord_binary="/y")
     assert base == Settings()
+
+
+# --------------------------------------------------------------------------
+# Precedence: CLI flag > env > config.json > default
+# --------------------------------------------------------------------------
+
+
+def test_load_precedence_flag_over_env_over_file(tmp_path):
+    paths = Paths(tmp_path)
+    Settings(port=1111).save(paths)
+
+    assert Settings.load_file(paths).port == 1111
+    effective = Settings.load(paths, env={"DEXPORT_PORT": "2222"})
+    assert effective.port == 2222
+    assert effective.with_overrides(port=3333).port == 3333
+
+
+def test_load_reads_os_environ_when_env_not_given(tmp_path, monkeypatch):
+    paths = Paths(tmp_path)
+    Settings(port=1111).save(paths)
+    monkeypatch.setenv("DEXPORT_PORT", "2222")
+    assert Settings.load(paths).port == 2222
+
+
+def test_load_falls_back_to_file_when_env_unset(tmp_path):
+    paths = Paths(tmp_path)
+    Settings(port=1111).save(paths)
+    assert Settings.load(paths, env={}).port == 1111
+
+
+def test_env_binary_overrides_file_but_is_not_persisted(tmp_path, monkeypatch):
+    paths = Paths(tmp_path)
+    Settings(discord_binary="/from-file").save(paths)
+    monkeypatch.setenv("DEXPORT_DISCORD_BINARY", "/from-env")
+
+    assert Settings.load(paths).discord_binary == "/from-env"
+
+    conf = Settings.load_file(paths)
+    assert conf.discord_binary == "/from-file"
+    conf.port = 4000
+    conf.save(paths)
+    on_disk = json.loads(paths.config.read_text(encoding="utf-8"))
+    assert on_disk["discord_binary"] == "/from-file"
+    assert on_disk["port"] == 4000
