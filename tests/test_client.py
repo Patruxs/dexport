@@ -150,3 +150,39 @@ def test_acquire_uses_capture_headers_as_the_refresh_hook(pipeline):
     # capture_headers ran once during acquire and once for the 401.
     assert pipeline.capture_calls == [pipeline.session, pipeline.session]
     assert pipeline.session.calls[1]["headers"]["authorization"] == "new"
+
+
+# --------------------------------------------------------------------------
+# acquire: settings / paths defaults
+# --------------------------------------------------------------------------
+
+
+def test_acquire_without_settings_loads_config_from_dexport_home(pipeline):
+    Settings(port=4321).save()
+    Dexport.acquire()
+    assert pipeline.ensure_calls[0][0] == 4321
+
+
+def test_acquire_without_settings_applies_env_overrides(pipeline, monkeypatch):
+    Settings(port=4321, discord_binary="/from/file").save()
+    monkeypatch.setenv("DEXPORT_PORT", "5000")
+    monkeypatch.setenv("DEXPORT_DISCORD_BINARY", "/from/env")
+    Dexport.acquire()
+    assert pipeline.ensure_calls == [
+        (5000, {"binary_override": "/from/env", "force_restart": False})
+    ]
+
+
+def test_acquire_honours_explicit_paths_for_config_and_cache(pipeline, tmp_path, dexport_home):
+    alt = Paths(tmp_path / "alt-home")
+    Settings(port=7777).save(alt)
+    save_cache(CACHE, alt)
+
+    dx = Dexport.acquire(paths=alt)
+    assert pipeline.ensure_calls[0][0] == 7777
+    assert dx.resolver.cache["guilds"] == CACHE["guilds"]
+
+    dx.resolver.cache["guilds"] = [{"id": "2", "name": "moved"}]
+    dx.close()
+    assert load_cache(alt)["guilds"] == [{"id": "2", "name": "moved"}]
+    assert not (dexport_home / "cache.json").exists()
