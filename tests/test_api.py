@@ -379,3 +379,32 @@ def test_500_retries_then_raises():
     with pytest.raises(ApiError) as exc:
         api.get_json("/users/@me")
     assert exc.value.status == 500
+
+
+def test_5xx_backoff_sleeps_double_then_succeeds():
+    limiter, clock = _recording_limiter()
+    session = FakeSession(
+        [_resp(500, "boom"), _resp(502, "bad gateway"), _resp(200, json.dumps({"ok": 1}))]
+    )
+    api = ApiCore(session, {"authorization": "tok"}, limiter)
+    assert api.get_json("/users/@me") == {"ok": 1}
+    assert clock.sleeps == [2.0, 4.0]
+    assert len(session.calls) == 3
+
+
+def test_5xx_backoff_is_capped():
+    limiter, clock = _recording_limiter()
+    session = FakeSession([_resp(503, "")] * 10)
+    api = ApiCore(session, {"authorization": "tok"}, limiter, max_retries=5)
+    with pytest.raises(ApiError) as exc:
+        api.get_json("/users/@me")
+    assert exc.value.status == 503
+    assert clock.sleeps == [2.0, 4.0, 8.0, 10.0, 10.0]
+    assert len(session.calls) == 6
+
+
+def test_network_error_in_renderer_retries_then_raises():
+    session = FakeSession([_resp(0, "", {}, error="TypeError: failed to fetch")] * 10)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter(), max_retries=1)
+    with pytest.raises(ApiError):
+        api.get_json("/users/@me")
