@@ -408,3 +408,31 @@ def test_network_error_in_renderer_retries_then_raises():
     api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter(), max_retries=1)
     with pytest.raises(ApiError):
         api.get_json("/users/@me")
+
+
+def test_network_error_details_surface_in_api_error():
+    session = FakeSession([_resp(0, "", {}, error="TypeError: failed to fetch")] * 10)
+    api = ApiCore(session, {"authorization": "tok"}, _no_sleep_limiter(), max_retries=1)
+    with pytest.raises(ApiError, match="TypeError: failed to fetch") as exc:
+        api.get_json("/users/@me")
+    assert exc.value.status == 0
+    assert len(session.calls) == 2
+
+
+def test_network_error_backoff_matches_5xx():
+    limiter, clock = _recording_limiter()
+    session = FakeSession(
+        [_resp(0, "", {}, error="TypeError: Failed to fetch")] * 2 + [_resp(200, "{}")]
+    )
+    api = ApiCore(session, {"authorization": "tok"}, limiter)
+    api.get_json("/x")
+    assert clock.sleeps == [2.0, 4.0]
+
+
+# --------------------------------------------------------------------------
+# ApiRequest
+# --------------------------------------------------------------------------
+
+
+def test_api_request_url_is_absolute():
+    assert ApiRequest("GET", "/users/@me").url == "https://discord.com/api/v9/users/@me"
