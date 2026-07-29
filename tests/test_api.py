@@ -436,3 +436,24 @@ def test_network_error_backoff_matches_5xx():
 
 def test_api_request_url_is_absolute():
     assert ApiRequest("GET", "/users/@me").url == "https://discord.com/api/v9/users/@me"
+
+
+def test_api_request_body_text_none():
+    assert ApiRequest("DELETE", "/x").body_text() is None
+
+
+def test_api_request_body_text_passes_strings_through():
+    assert ApiRequest("POST", "/x", "raw payload").body_text() == "raw payload"
+
+
+def test_api_request_body_text_serialises_dict_without_escaping_unicode():
+    text = ApiRequest("POST", "/x", {"content": "xin chào 👍"}).body_text()
+    assert text == '{"content": "xin chào 👍"}'
+    assert json.loads(text) == {"content": "xin chào 👍"}
+
+
+def test_api_request_is_immutable():
+    # The same object is previewed (--dry-run) and then sent; it must not drift.
+    req = ApiRequest("POST", "/channels/c/messages", {"content": "hi"})
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        req.path = "/elsewhere"
