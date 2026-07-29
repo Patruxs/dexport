@@ -293,3 +293,99 @@ def test_dry_run_reply_body_has_message_reference(runner, forbid_acquire):
         },
     }
     assert forbid_acquire == []
+
+
+@pytest.mark.parametrize(
+    ("emoji", "segment"),
+    [("👍", "%F0%9F%91%8D"), ("<:party:987>", "party%3A987"), ("<a:wave:55>", "wave%3A55")],
+)
+def test_dry_run_react_percent_encodes_emoji(runner, forbid_acquire, emoji, segment):
+    result = runner.invoke(
+        app, ["react", "--to", "42", "-e", emoji, "--dry-run", "--channel-id", CHANNEL_ID]
+    )
+    assert result.exit_code == 0, result.output
+    method, url, body = parse_preview(result.output)
+    assert method == "PUT"
+    assert url == f"{MESSAGES_URL}/42/reactions/{segment}/@me"
+    assert body is None
+    assert forbid_acquire == []
+
+
+def test_dry_run_delete_has_no_body(runner, forbid_acquire):
+    result = runner.invoke(app, ["delete", "--to", "42", "--dry-run", "--channel-id", CHANNEL_ID])
+    assert result.exit_code == 0, result.output
+    assert parse_preview(result.output) == ("DELETE", f"{MESSAGES_URL}/42", None)
+    assert forbid_acquire == []
+
+
+def test_dry_run_with_channel_name_resolves_but_sends_nothing(runner, fake_dx):
+    result = runner.invoke(
+        app, ["send", "-g", "cu dem", "-c", "luoi chat tong", "-m", "hi", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert parse_preview(result.output) == (
+        "POST",
+        f"{DISCORD_API_BASE}/channels/10/messages",
+        {"content": "hi"},
+    )
+    assert fake_dx.api.calls == []
+    assert fake_dx.pauses == []
+    assert len(fake_dx.acquire_calls) == 1
+
+
+# --------------------------------------------------------------------------
+# 4. Target validation
+# --------------------------------------------------------------------------
+
+
+def test_send_without_channel_fails(runner, fake_dx):
+    result = runner.invoke(app, ["send", "-m", "hi", "--dry-run"])
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "Provide a channel" in result.output
+    assert fake_dx.api.calls == []
+    assert fake_dx.closed == 1  # the session is released even on failure
+
+
+def test_send_with_channel_name_but_no_guild_fails(runner, fake_dx):
+    result = runner.invoke(app, ["send", "-c", "luoi chat tong", "-m", "hi", "--yes"])
+    assert result.exit_code == 1
+    assert "Provide a guild" in result.output
+    assert fake_dx.api.calls == []
+
+
+def test_channels_without_guild_fails(runner, fake_dx):
+    result = runner.invoke(app, ["channels"])
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "Provide -g/--guild" in result.output
+
+
+# --------------------------------------------------------------------------
+# 5. configure
+# --------------------------------------------------------------------------
+
+CONFIG_KEYS = {"port", "discord_binary", "floor_delay_min", "floor_delay_max"}
+
+
+def _shown_config(output: str) -> dict[str, Any]:
+    """The JSON object ``configure --show`` prints (before the ``config:`` line)."""
+    return json.loads(output[: output.rindex("}") + 1])
+
+
+def test_configure_show_prints_defaults_and_path(runner, dexport_home):
+    result = runner.invoke(app, ["configure", "--show"])
+    assert result.exit_code == 0, result.output
+    shown = _shown_config(result.output)
+    assert set(shown) == CONFIG_KEYS
+    assert shown["port"] == DEFAULT_CDP_PORT
+    assert shown["discord_binary"] is None
+    assert f"config: {dexport_home / 'config.json'}" in result.output
+    assert not (dexport_home / "config.json").exists()  # --show alone writes nothing
+
+
+def test_configure_without_flags_behaves_like_show(runner):
+    result = runner.invoke(app, ["configure"])
+    assert result.exit_code == 0, result.output
+    assert set(_shown_config(result.output)) == CONFIG_KEYS
+    assert "config:" in result.output
