@@ -457,3 +457,29 @@ def test_api_request_is_immutable():
     req = ApiRequest("POST", "/channels/c/messages", {"content": "hi"})
     with pytest.raises(dataclasses.FrozenInstanceError):
         req.path = "/elsewhere"
+
+
+# --------------------------------------------------------------------------
+# ApiResponse
+# --------------------------------------------------------------------------
+
+
+def test_response_json_empty_body_is_none():
+    assert ApiResponse(204, {}, "").json() is None
+
+
+def test_response_json_invalid_raises_api_error():
+    r = ApiResponse(200, {}, "<html>oops</html>")
+    with pytest.raises(ApiError, match="invalid JSON") as exc:
+        r.json()
+    assert exc.value.status == 200
+    assert exc.value.body == "<html>oops</html>"
+    assert isinstance(exc.value.__cause__, json.JSONDecodeError)
+
+
+@pytest.mark.parametrize(
+    ("status", "ok"),
+    [(200, True), (204, True), (299, True), (199, False), (300, False), (404, False)],
+)
+def test_response_ok(status, ok):
+    assert ApiResponse(status, {}, "").ok is ok
