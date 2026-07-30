@@ -389,3 +389,103 @@ def test_configure_without_flags_behaves_like_show(runner):
     assert result.exit_code == 0, result.output
     assert set(_shown_config(result.output)) == CONFIG_KEYS
     assert "config:" in result.output
+
+
+def test_configure_saves_port_and_binary(runner, dexport_home):
+    result = runner.invoke(app, ["configure", "--port", "4321", "--binary", "/x"])
+    assert result.exit_code == 0, result.output
+    assert "Saved" in result.output
+    saved = json.loads((dexport_home / "config.json").read_text(encoding="utf-8"))
+    assert saved["port"] == 4321
+    assert saved["discord_binary"] == "/x"
+
+    shown = _shown_config(runner.invoke(app, ["configure", "--show"]).output)
+    assert (shown["port"], shown["discord_binary"]) == (4321, "/x")
+
+
+def test_configure_never_persists_env_port(runner, dexport_home):
+    assert runner.invoke(app, ["configure", "--port", "4321"]).exit_code == 0
+
+    result = runner.invoke(app, ["configure", "--binary", "/x"], env={"DEXPORT_PORT": "5000"})
+    assert result.exit_code == 0, result.output
+    saved = json.loads((dexport_home / "config.json").read_text(encoding="utf-8"))
+    assert saved["port"] == 4321
+    assert saved["discord_binary"] == "/x"
+
+
+# --------------------------------------------------------------------------
+# 6. Commands that need Discord, through the fake
+# --------------------------------------------------------------------------
+
+
+def test_whoami_prints_account(runner, fake_dx):
+    fake_dx.api.queue(200, {"id": "42", "username": "pat", "global_name": "Pat"})
+    result = runner.invoke(app, ["whoami"])
+    assert result.exit_code == 0, result.output
+    assert "Logged in as Pat (@pat)" in result.output
+    assert "(42)" in result.output
+    assert fake_dx.api.calls == [("GET", "/users/@me", None)]
+    assert fake_dx.closed == 1
+
+
+def test_guilds_lists_cached_guilds_sorted_case_insensitively(runner, fake_dx):
+    fake_dx.resolver.cache["guilds"] = [
+        {"id": "2", "name": "beta"},
+        {"id": "3", "name": "Zeta"},
+        {"id": "1", "name": "Alpha"},
+    ]
+    result = runner.invoke(app, ["guilds"])
+    assert result.exit_code == 0, result.output
+    assert "3 guilds" in result.output
+    assert "1  Alpha" in result.output
+    positions = [result.output.index(name) for name in ("Alpha", "beta", "Zeta")]
+    assert positions == sorted(positions)
+    assert fake_dx.api.calls == []  # served from the cache
+
+
+def test_guilds_refresh_refetches_and_persists(runner, fake_dx):
+    fake_dx.api.queue(200, [{"id": "7", "name": "fresh"}])
+    result = runner.invoke(app, ["guilds", "--refresh"])
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("GET", "/users/@me/guilds", None)]
+    assert "7  fresh" in result.output
+    assert "random server" not in result.output
+    assert fake_dx.resolver.cache["guilds"] == [{"id": "7", "name": "fresh"}]
+    assert fake_dx.saved == 1
+
+
+def test_channels_by_fuzzy_guild_name(runner, fake_dx):
+    result = runner.invoke(app, ["channels", "-g", "cu dem"])
+    assert result.exit_code == 0, result.output
+    assert "cú đêm: 3 channels" in result.output
+    for cid, name in (("10", "lười-chat-tổng"), ("11", "voice-hangout"), ("12", "thông-báo")):
+        assert f"{cid}  #{name}" in result.output
+    assert fake_dx.api.calls == []
+
+
+def test_channels_by_uncached_guild_id_fetches(runner, fake_dx):
+    fake_dx.api.queue(200, [{"id": "50", "name": "general", "type": 0}])
+    result = runner.invoke(app, ["channels", "--guild-id", "999"])
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("GET", "/guilds/999/channels", None)]
+    assert "999: 1 channels" in result.output
+    assert "50  #general" in result.output
+
+
+def test_read_renders_messages_oldest_first(runner, fake_dx):
+    fake_dx.api.queue(200, MESSAGES_NEWEST_FIRST)
+    result = runner.invoke(app, ["read", "--channel-id", CHANNEL_ID, "--limit", "5"])
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("GET", f"/channels/{CHANNEL_ID}/messages?limit=5", None)]
+    assert f"channel {CHANNEL_ID}" in result.output
+    assert result.output.index("alice") < result.output.index("bob")
+    assert result.output.index("first") < result.output.index("second")
+
+
+def test_read_by_names_resolves_and_shows_empty_channel(runner, fake_dx):
+    fake_dx.api.queue(200, [])
+    result = runner.invoke(app, ["read", "-g", "cu dem", "-c", "luoi chat tong"])
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("GET", "/channels/10/messages?limit=50", None)]
+    assert "cú đêm #lười-chat-tổng" in result.output
+    assert "(no messages)" in result.output
