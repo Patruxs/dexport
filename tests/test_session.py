@@ -352,3 +352,27 @@ def test_wait_for_request_does_not_reload_by_default():
     page = FakePage(requests=[_api_request()])
     Session(None, None, page).wait_for_request(_any_request, timeout=1.0)
     assert page.reload_calls == []
+
+
+def test_wait_for_request_reload_uses_commit_and_millisecond_timeout():
+    page = FakePage(requests=[_api_request()])
+    Session(None, None, page).wait_for_request(
+        _any_request, timeout=1.0, reload=True, reload_timeout=2.5
+    )
+    assert page.reload_calls == [{"timeout": 2500, "wait_until": "commit"}]
+
+
+def test_wait_for_request_reload_happens_while_listener_is_armed():
+    page = FakePage(requests=[_api_request()])
+    Session(None, None, page).wait_for_request(_any_request, timeout=1.0, reload=True)
+    assert page.events == ["listen:start", "reload", "listen:end"]
+
+
+def test_wait_for_request_reload_failure_does_not_lose_captured_request():
+    page = FakePage(
+        requests=[_api_request()],
+        reload_error=RuntimeError("Navigation interrupted by another navigation"),
+    )
+    out = Session(None, None, page).wait_for_request(_any_request, timeout=1.0, reload=True)
+    assert out == {"authorization": "tok", "x-super-properties": "abc"}
+    assert len(page.reload_calls) == 1
