@@ -334,3 +334,21 @@ def test_wait_for_request_timeout_is_converted_to_milliseconds():
     page = FakePage(requests=[_api_request()])
     Session(None, None, page).wait_for_request(_any_request, timeout=1.5)
     assert page.expect_calls[0]["timeout"] == 1500
+
+
+def test_wait_for_request_returns_none_when_nothing_matches():
+    page = FakePage(requests=[_api_request()])
+    out = Session(None, None, page).wait_for_request(lambda url, headers: False, timeout=0)
+    assert out is None
+
+
+def test_wait_for_request_returns_none_when_listener_itself_raises():
+    page = FakePage(expect_request_error=FakeTimeout("Timeout 0ms exceeded"))
+    out = Session(None, None, page).wait_for_request(_any_request, timeout=0)
+    assert out is None
+
+
+def test_wait_for_request_does_not_reload_by_default():
+    page = FakePage(requests=[_api_request()])
+    Session(None, None, page).wait_for_request(_any_request, timeout=1.0)
+    assert page.reload_calls == []
