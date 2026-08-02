@@ -652,3 +652,43 @@ def test_ensure_discord_reuses_live_endpoint_without_launching(monkeypatch):
 
     # Nothing else is touched: works even when no binary could be discovered.
     assert stubs.events == []
+
+
+def test_ensure_discord_launches_found_binary_and_waits_for_endpoint(monkeypatch):
+    stubs = LauncherStubs(monkeypatch, alive=[False, True])
+
+    url = ensure_discord(PORT, binary_override="/custom/Discord", wait_timeout=1, poll_interval=0)
+
+    assert url == f"http://127.0.0.1:{PORT}"
+    assert stubs.events == [("find", "/custom/Discord"), ("launch", FAKE_BINARY, PORT)]
+
+
+def test_ensure_discord_times_out_with_restart_hint(monkeypatch):
+    stubs = LauncherStubs(monkeypatch, alive=[False])
+
+    with pytest.raises(LauncherError) as exc_info:
+        ensure_discord(PORT, wait_timeout=0, poll_interval=0)
+
+    message = str(exc_info.value)
+    assert "--restart" in message
+    assert str(PORT) in message
+    assert len(stubs.launches) == 1  # it did try
+
+
+def test_ensure_discord_force_restart_refuses_to_launch_while_still_running(monkeypatch):
+    stubs = LauncherStubs(monkeypatch, alive=[False], running=True)
+
+    with pytest.raises(LauncherError, match="still running"):
+        ensure_discord(PORT, force_restart=True, wait_timeout=0, poll_interval=0)
+
+    assert ("kill",) in stubs.events
+    assert stubs.launches == []
+
+
+def test_ensure_discord_force_restart_kills_then_launches(monkeypatch):
+    stubs = LauncherStubs(monkeypatch, alive=[False, True], running=False)
+
+    url = ensure_discord(PORT, force_restart=True, wait_timeout=1, poll_interval=0)
+
+    assert url == f"http://127.0.0.1:{PORT}"
+    assert stubs.events == [("find", None), ("kill",), ("launch", FAKE_BINARY, PORT)]
