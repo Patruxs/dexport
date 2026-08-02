@@ -628,3 +628,114 @@ def test_api_error_is_reported_as_error_line(runner, fake_dx):
     assert "Missing Access" in result.output
     assert result.exception is None or isinstance(result.exception, SystemExit)
     assert fake_dx.closed == 1
+
+
+def test_error_while_acquiring_is_reported(runner, monkeypatch):
+    def acquire(**kwargs: Any) -> FakeDexport:
+        raise LauncherError("Discord binary not found")
+
+    monkeypatch.setattr("dexport.cli.common.Dexport.acquire", acquire)
+    result = runner.invoke(app, ["whoami"])
+    assert result.exit_code == 1
+    assert "error: Discord binary not found" in result.output
+
+
+def test_global_port_and_restart_reach_acquire(runner, fake_dx):
+    fake_dx.api.queue(200, {"id": "1", "username": "me"})
+    result = runner.invoke(app, ["--port", "1234", "--restart", "whoami"])
+    assert result.exit_code == 0, result.output
+    [call] = fake_dx.acquire_calls
+    assert call["force_restart"] is True
+    assert call["settings"].port == 1234
+
+
+def test_global_binary_reaches_acquire(runner, fake_dx):
+    fake_dx.api.queue(200, {"id": "1", "username": "me"})
+    result = runner.invoke(app, ["--binary", "/b", "whoami"])
+    assert result.exit_code == 0, result.output
+    [call] = fake_dx.acquire_calls
+    assert call["settings"].discord_binary == "/b"
+    assert call["force_restart"] is False
+
+
+@pytest.mark.parametrize(
+    ("file_port", "env", "args", "expected_port"),
+    [
+        pytest.param(None, {}, [], DEFAULT_CDP_PORT, id="default"),
+        pytest.param(7777, {}, [], 7777, id="config-file"),
+        pytest.param(7777, {"DEXPORT_PORT": "5000"}, [], 5000, id="env-beats-file"),
+        pytest.param(7777, {"DEXPORT_PORT": "5000"}, ["--port", "1234"], 1234, id="flag-beats-env"),
+    ],
+)
+def test_port_precedence_flag_env_file_default(
+    runner, fake_dx, dexport_home, file_port, env, args, expected_port
+):
+    if file_port is not None:
+        dexport_home.mkdir(parents=True, exist_ok=True)
+        (dexport_home / "config.json").write_text(json.dumps({"port": file_port}))
+    fake_dx.api.queue(200, {"id": "1", "username": "me"})
+    result = runner.invoke(app, [*args, "whoami"], env=env)
+    assert result.exit_code == 0, result.output
+    [call] = fake_dx.acquire_calls
+    assert call["settings"].port == expected_port
+
+
+# --------------------------------------------------------------------------
+# 7. default_export_path
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("label", "fmt", "expected"),
+    [
+        ("Cool Server", "json", "cool-server.json"),
+        (f"channel {CHANNEL_ID}", "md", f"channel-{CHANNEL_ID}.md"),
+        ("#general", "md", "general.md"),
+        ("x", "JSON", "x.json"),
+        ("x", "markdown", "x.md"),
+        ("x", "unknown-format", "x.md"),
+        ("", "md", "export.md"),
+        ("", "json", "export.json"),
+        ("###", "md", "export.md"),
+    ],
+)
+def test_default_export_path(label, fmt, expected):
+    assert default_export_path(label, fmt) == expected
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="runs of separators are not collapsed: currently yields 'my-server--general.md'",
+)
+def test_default_export_path_collapses_separator_runs():
+    assert default_export_path("My Server #general", "md") == "my-server-general.md"
+
+
+# --------------------------------------------------------------------------
+# 8. Terms-of-Service notice
+# --------------------------------------------------------------------------
+
+
+def test_tos_notice_is_shown_once_and_leaves_a_marker(dexport_home, capsys):
+    warn_tos_once()
+    first = capsys.readouterr().err
+    assert "Terms of Service" in first
+    assert (dexport_home / "notice-shown").exists()
+
+    warn_tos_once()
+    assert capsys.readouterr().err == ""
+
+
+def test_tos_notice_survives_an_unwritable_home(tmp_path, capsys):
+    unwritable = Paths(home=tmp_path / "file-not-a-dir" / "home")
+    (tmp_path / "file-not-a-dir").write_text("", encoding="utf-8")
+
+    warn_tos_once(unwritable)  # must not raise
+
+    assert "Terms of Service" in capsys.readouterr().err
+
+
+def test_root_help_carries_the_self_bot_warning():
+    result = CliRunner().invoke(app, ["--help"], env=PLAIN_ENV)
+    assert result.exit_code == 0
+    assert "Terms of" in result.output
