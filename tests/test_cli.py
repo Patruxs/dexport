@@ -489,3 +489,142 @@ def test_read_by_names_resolves_and_shows_empty_channel(runner, fake_dx):
     assert fake_dx.api.calls == [("GET", "/channels/10/messages?limit=50", None)]
     assert "cú đêm #lười-chat-tổng" in result.output
     assert "(no messages)" in result.output
+
+
+def test_export_json_writes_file_oldest_first(runner, fake_dx, tmp_path):
+    fake_dx.api.queue(200, MESSAGES_NEWEST_FIRST)
+    out = tmp_path / "out.json"
+    result = runner.invoke(
+        app, ["export", "--channel-id", CHANNEL_ID, "-f", "json", "-o", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "fetched 2..." in result.output
+    assert "Exported 2 messages" in result.output
+    assert str(out) in result.output
+    assert [m["id"] for m in json.loads(out.read_text(encoding="utf-8"))] == ["1", "2"]
+
+
+def test_export_default_path_is_markdown_in_cwd(runner, fake_dx, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    fake_dx.api.queue(200, MESSAGES_NEWEST_FIRST)
+    result = runner.invoke(app, ["export", "--channel-id", CHANNEL_ID])
+    assert result.exit_code == 0, result.output
+    out = tmp_path / f"channel-{CHANNEL_ID}.md"
+    assert f"Exported 2 messages -> {out.name}" in result.output
+    text = out.read_text(encoding="utf-8")
+    assert text.startswith(f"# channel {CHANNEL_ID}")
+    assert text.index("first") < text.index("second")
+
+
+def test_export_unknown_format_fails_without_writing(runner, fake_dx, tmp_path):
+    fake_dx.api.queue(200, [])
+    out = tmp_path / "out.xml"
+    result = runner.invoke(
+        app, ["export", "--channel-id", CHANNEL_ID, "--format", "xml", "-o", str(out)]
+    )
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "xml" in result.output
+    assert not out.exists()
+
+
+def test_send_resolves_names_confirms_pauses_and_posts(runner, fake_dx):
+    fake_dx.api.queue(200, {"id": "999"})
+    result = runner.invoke(
+        app, ["send", "-g", "cu dem", "-c", "luoi chat tong", "-m", "hi", "--yes"]
+    )
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("POST", "/channels/10/messages", {"content": "hi"})]
+    assert "Sent message 999 to cú đêm #lười-chat-tổng" in result.output
+    assert len(fake_dx.pauses) == 1
+
+
+def test_send_declined_at_prompt_sends_nothing(runner, fake_dx):
+    result = runner.invoke(app, ["send", "--channel-id", CHANNEL_ID, "-m", "hi"], input="n\n")
+    assert result.exit_code == 0, result.output
+    assert f"Send message in channel {CHANNEL_ID}?" in result.output
+    assert fake_dx.api.calls == []
+    assert fake_dx.pauses == []
+    assert "Sent" not in result.output
+
+
+def test_send_accepted_at_prompt_posts(runner, fake_dx):
+    fake_dx.api.queue(200, {"id": "999"})
+    result = runner.invoke(app, ["send", "--channel-id", CHANNEL_ID, "-m", "hi"], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("POST", f"/channels/{CHANNEL_ID}/messages", {"content": "hi"})]
+    assert "Sent message 999" in result.output
+
+
+EXECUTE_CASES = [
+    pytest.param(
+        ["send", "-m", "hi"],
+        (200, {"id": "999"}),
+        ("POST", f"/channels/{CHANNEL_ID}/messages", {"content": "hi"}),
+        "Sent message 999",
+        id="send",
+    ),
+    pytest.param(
+        ["reply", "--to", "42", "-m", "hi"],
+        (200, {"id": "1000"}),
+        (
+            "POST",
+            f"/channels/{CHANNEL_ID}/messages",
+            {
+                "content": "hi",
+                "message_reference": {
+                    "channel_id": CHANNEL_ID,
+                    "message_id": "42",
+                    "fail_if_not_exists": False,
+                },
+            },
+        ),
+        "Replied with message 1000",
+        id="reply",
+    ),
+    pytest.param(
+        ["react", "--to", "42", "-e", "👍"],
+        (204, None),
+        ("PUT", f"/channels/{CHANNEL_ID}/messages/42/reactions/%F0%9F%91%8D/@me", None),
+        "Reacted 👍 to 42",
+        id="react",
+    ),
+    pytest.param(
+        ["edit", "--to", "42", "-m", "fixed"],
+        (200, {"id": "42"}),
+        ("PATCH", f"/channels/{CHANNEL_ID}/messages/42", {"content": "fixed"}),
+        "Edited message 42",
+        id="edit",
+    ),
+    pytest.param(
+        ["delete", "--to", "42"],
+        (204, None),
+        ("DELETE", f"/channels/{CHANNEL_ID}/messages/42", None),
+        "Deleted message 42",
+        id="delete",
+    ),
+]
+
+
+@pytest.mark.parametrize(("args", "response", "expected_call", "done"), EXECUTE_CASES)
+def test_write_verb_executes_request_and_reports(
+    runner, fake_dx, args, response, expected_call, done
+):
+    fake_dx.api.queue(*response)
+    result = runner.invoke(app, [*args, "--channel-id", CHANNEL_ID, "--yes"])
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [expected_call]
+    assert done in result.output
+    assert f"channel {CHANNEL_ID}" in result.output
+    assert len(fake_dx.pauses) == 1
+
+
+def test_api_error_is_reported_as_error_line(runner, fake_dx):
+    fake_dx.api.queue(403, {"message": "Missing Access"})
+    result = runner.invoke(app, ["send", "--channel-id", CHANNEL_ID, "-m", "hi", "--yes"])
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "403" in result.output
+    assert "Missing Access" in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert fake_dx.closed == 1
