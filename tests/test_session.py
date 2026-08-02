@@ -376,3 +376,39 @@ def test_wait_for_request_reload_failure_does_not_lose_captured_request():
     out = Session(None, None, page).wait_for_request(_any_request, timeout=1.0, reload=True)
     assert out == {"authorization": "tok", "x-super-properties": "abc"}
     assert len(page.reload_calls) == 1
+
+
+# --------------------------------------------------------------------------
+# Session.close / context manager
+# --------------------------------------------------------------------------
+
+
+def test_close_detaches_browser_and_stops_playwright():
+    browser, pw = FakeBrowser(), FakePlaywright()
+    Session(pw, browser, FakePage()).close()
+    assert browser.closed
+    assert pw.stopped
+
+
+def test_close_swallows_errors_and_still_stops_playwright():
+    browser, pw = FakeBrowser(fail=True), FakePlaywright(fail=True)
+    Session(pw, browser, FakePage()).close()  # must not raise
+    assert browser.closed
+    assert pw.stopped
+
+
+def test_context_manager_closes_on_exit():
+    browser, pw = FakeBrowser(), FakePlaywright()
+    with Session(pw, browser, FakePage()) as session:
+        assert isinstance(session, Session)
+        assert not browser.closed
+    assert browser.closed
+    assert pw.stopped
+
+
+def test_context_manager_closes_on_exception():
+    browser, pw = FakeBrowser(), FakePlaywright()
+    with pytest.raises(ValueError, match="boom"), Session(pw, browser, FakePage()):
+        raise ValueError("boom")
+    assert browser.closed
+    assert pw.stopped
