@@ -366,3 +366,100 @@ def test_wait_for_request_reload_happens_while_listener_is_armed():
     page = FakePage(requests=[_api_request()])
     Session(None, None, page).wait_for_request(_any_request, timeout=1.0, reload=True)
     assert page.events == ["listen:start", "reload", "listen:end"]
+
+
+def test_wait_for_request_reload_failure_does_not_lose_captured_request():
+    page = FakePage(
+        requests=[_api_request()],
+        reload_error=RuntimeError("Navigation interrupted by another navigation"),
+    )
+    out = Session(None, None, page).wait_for_request(_any_request, timeout=1.0, reload=True)
+    assert out == {"authorization": "tok", "x-super-properties": "abc"}
+    assert len(page.reload_calls) == 1
+
+
+# --------------------------------------------------------------------------
+# Session.close / context manager
+# --------------------------------------------------------------------------
+
+
+def test_close_detaches_browser_and_stops_playwright():
+    browser, pw = FakeBrowser(), FakePlaywright()
+    Session(pw, browser, FakePage()).close()
+    assert browser.closed
+    assert pw.stopped
+
+
+def test_close_swallows_errors_and_still_stops_playwright():
+    browser, pw = FakeBrowser(fail=True), FakePlaywright(fail=True)
+    Session(pw, browser, FakePage()).close()  # must not raise
+    assert browser.closed
+    assert pw.stopped
+
+
+def test_context_manager_closes_on_exit():
+    browser, pw = FakeBrowser(), FakePlaywright()
+    with Session(pw, browser, FakePage()) as session:
+        assert isinstance(session, Session)
+        assert not browser.closed
+    assert browser.closed
+    assert pw.stopped
+
+
+def test_context_manager_closes_on_exception():
+    browser, pw = FakeBrowser(), FakePlaywright()
+    with pytest.raises(ValueError, match="boom"), Session(pw, browser, FakePage()):
+        raise ValueError("boom")
+    assert browser.closed
+    assert pw.stopped
+
+
+# --------------------------------------------------------------------------
+# Session.connect (sync_playwright patched; nothing real is started)
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_playwright(monkeypatch):
+    """Install a fake ``sync_playwright``; the test configures ``holder.pw``."""
+    holder: dict[str, Any] = {}
+
+    class _Starter:
+        def start(self) -> FakePlaywright:
+            return holder["pw"]
+
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", lambda: _Starter())
+    return holder
+
+
+def test_connect_attaches_and_picks_the_app_page(fake_playwright):
+    app = FakePage(evaluate_result="from app page")
+    app.url = "https://discord.com/channels/1/2"
+    overlay = FakePage(evaluate_result="from overlay")
+    overlay.url = "https://discord.com/overlay"
+    browser = FakeBrowser(pages=[overlay, app])
+    fake_playwright["pw"] = pw = FakePlaywright(browser=browser)
+
+    session = Session.connect("http://127.0.0.1:9222")
+
+    assert pw.chromium.connect_calls == ["http://127.0.0.1:9222"]
+    # evaluate must run in the app page, not the overlay renderer.
+    assert session.evaluate("1") == "from app page"
+    assert not browser.closed
+    assert not pw.stopped
+
+
+def test_connect_failure_stops_playwright_and_raises_session_error(fake_playwright):
+    fake_playwright["pw"] = pw = FakePlaywright(connect_error=ConnectionError("refused"))
+    with pytest.raises(SessionError, match=r"127\.0\.0\.1:9222.*refused"):
+        Session.connect("http://127.0.0.1:9222")
+    assert pw.stopped
+
+
+def test_connect_without_app_page_releases_everything_and_raises(fake_playwright):
+    browser = FakeBrowser(pages=[_Page("chrome://gpu"), _Page("about:blank")])
+    fake_playwright["pw"] = pw = FakePlaywright(browser=browser)
+    with pytest.raises(SessionError, match="no app page"):
+        Session.connect("http://127.0.0.1:9222")
+    assert browser.closed
+    assert pw.stopped
