@@ -206,3 +206,17 @@ def test_remove_reaction_request_mirrors_add_path():
     assert rm.path == add.path
     assert rm.path.endswith("/reactions/party%3A67890/@me")
     assert rm.body is None
+
+
+def test_history_request_without_before():
+    req = history_request("c", limit=50)
+    assert (req.method, req.path, req.body) == ("GET", "/channels/c/messages?limit=50", None)
+
+
+def test_history_request_with_before():
+    req = history_request("c", limit=50, before="123")
+    assert req.path == "/channels/c/messages?limit=50&before=123"
+
+
+def test_history_request_empty_before_is_omitted():
+    assert "before" not in history_request("c", limit=50, before="").path
