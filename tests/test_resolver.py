@@ -293,3 +293,81 @@ def test_normalize_cache_repairs_bad_types_in_place():
 
 def test_normalize_cache_fills_missing_keys():
     assert normalize_cache({}) == {"guilds": None, "channels": {}}
+
+
+def test_normalize_cache_leaves_valid_cache_untouched(resolver_cache):
+    before = copy.deepcopy(resolver_cache)
+    assert normalize_cache(resolver_cache) == before
+
+
+def test_resolver_repairs_corrupt_cache_on_construction():
+    r = Resolver(NoApi(), {"guilds": {"not": "a list"}, "channels": "nope"})
+    assert r.cache == {"guilds": None, "channels": {}}
+
+
+# --------------------------------------------------------------------------
+# score()
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("query", "candidate", "expected"),
+    [
+        ("general", "general", 100.0),
+        ("", "general", 0.0),
+        ("general", "", 0.0),
+        ("", "", 0.0),
+        ("cu dem", "cú đêm", 100.0),
+        ("General  Chat", "general chat", 100.0),
+    ],
+)
+def test_score_exact_cases(query, candidate, expected):
+    assert score(query, candidate) == expected
+
+
+def test_score_full_name_beats_short_substring():
+    # Regression: a short name contained in the query must not outrank the
+    # intended full-name match.
+    assert score("general chat", "general-chat") > score("general chat", "gen")
+
+
+def test_score_unrelated_names_fall_below_default_threshold():
+    assert score("totally-unrelated-xyz", "random server") < DEFAULT_THRESHOLD
+
+
+def test_score_is_bounded():
+    assert 0.0 <= score("abc", "xyz") <= 100.0
+    assert 0.0 < score("general-chat", "general chat") < 100.0
+
+
+# --------------------------------------------------------------------------
+# ResolveError messages
+# --------------------------------------------------------------------------
+
+
+def test_unmatched_error_lists_closest_names(resolver):
+    with pytest.raises(ResolveError, match="Closest:") as excinfo:
+        resolver.resolve_guild("totally-unrelated-xyz", threshold=95)
+    msg = str(excinfo.value)
+    assert "guild" in msg
+    assert "totally-unrelated-xyz" in msg
+    assert "'cú đêm'" in msg
+    assert "'random server'" in msg
+
+
+def test_unmatched_channel_error_names_the_channel_kind(resolver):
+    with pytest.raises(ResolveError, match="channel 'nonsense-zzz'") as excinfo:
+        resolver.resolve_channel("1", "nonsense-zzz", threshold=99)
+    assert "'lười-chat-tổng'" in str(excinfo.value)
+
+
+def test_no_guilds_error_message():
+    r = Resolver(NoApi(), {"guilds": [], "channels": {}})
+    with pytest.raises(ResolveError, match="No guilds available"):
+        r.resolve_guild("anything")
+
+
+def test_no_text_channels_error_message():
+    r = Resolver(NoApi(), {"guilds": [], "channels": {"1": []}})
+    with pytest.raises(ResolveError, match="No channels available"):
+        r.resolve_channel("1", "anything")
