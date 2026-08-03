@@ -251,3 +251,16 @@ def test_display_name_fallbacks(author, expected):
 def test_summarize_author():
     assert summarize_author({"username": "alice", "global_name": "Alice"}) == "Alice (@alice)"
     assert summarize_author({"username": "bob"}) == "@bob"
+
+
+def test_summarize_author_collapses_identical_names():
+    assert summarize_author({"username": "bob", "global_name": "bob"}) == "@bob"
+
+
+def test_summarize_author_without_username_uses_display_name():
+    assert summarize_author({"id": "42"}) == "42"
+
+
+def test_attachment_lines_omit_size_when_unknown():
+    msg = {"attachments": [{"filename": "a.bin", "url": "u"}, {"url": "v", "size": "big"}]}
+    assert attachment_lines(msg) == ["a.bin: u", "file: v"]
