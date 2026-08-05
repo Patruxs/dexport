@@ -323,3 +323,18 @@ def test_resolver_repairs_corrupt_cache_on_construction():
 )
 def test_score_exact_cases(query, candidate, expected):
     assert score(query, candidate) == expected
+
+
+def test_score_full_name_beats_short_substring():
+    # Regression: a short name contained in the query must not outrank the
+    # intended full-name match.
+    assert score("general chat", "general-chat") > score("general chat", "gen")
+
+
+def test_score_unrelated_names_fall_below_default_threshold():
+    assert score("totally-unrelated-xyz", "random server") < DEFAULT_THRESHOLD
+
+
+def test_score_is_bounded():
+    assert 0.0 <= score("abc", "xyz") <= 100.0
+    assert 0.0 < score("general-chat", "general chat") < 100.0
