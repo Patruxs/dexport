@@ -338,3 +338,36 @@ def test_score_unrelated_names_fall_below_default_threshold():
 def test_score_is_bounded():
     assert 0.0 <= score("abc", "xyz") <= 100.0
     assert 0.0 < score("general-chat", "general chat") < 100.0
+
+
+# --------------------------------------------------------------------------
+# ResolveError messages
+# --------------------------------------------------------------------------
+
+
+def test_unmatched_error_lists_closest_names(resolver):
+    with pytest.raises(ResolveError, match="Closest:") as excinfo:
+        resolver.resolve_guild("totally-unrelated-xyz", threshold=95)
+    msg = str(excinfo.value)
+    assert "guild" in msg
+    assert "totally-unrelated-xyz" in msg
+    assert "'cú đêm'" in msg
+    assert "'random server'" in msg
+
+
+def test_unmatched_channel_error_names_the_channel_kind(resolver):
+    with pytest.raises(ResolveError, match="channel 'nonsense-zzz'") as excinfo:
+        resolver.resolve_channel("1", "nonsense-zzz", threshold=99)
+    assert "'lười-chat-tổng'" in str(excinfo.value)
+
+
+def test_no_guilds_error_message():
+    r = Resolver(NoApi(), {"guilds": [], "channels": {}})
+    with pytest.raises(ResolveError, match="No guilds available"):
+        r.resolve_guild("anything")
+
+
+def test_no_text_channels_error_message():
+    r = Resolver(NoApi(), {"guilds": [], "channels": {"1": []}})
+    with pytest.raises(ResolveError, match="No channels available"):
+        r.resolve_channel("1", "anything")
