@@ -289,3 +289,37 @@ def test_normalize_cache_repairs_bad_types_in_place():
     out = normalize_cache(cache)
     assert out is cache
     assert cache == {"guilds": None, "channels": {}}
+
+
+def test_normalize_cache_fills_missing_keys():
+    assert normalize_cache({}) == {"guilds": None, "channels": {}}
+
+
+def test_normalize_cache_leaves_valid_cache_untouched(resolver_cache):
+    before = copy.deepcopy(resolver_cache)
+    assert normalize_cache(resolver_cache) == before
+
+
+def test_resolver_repairs_corrupt_cache_on_construction():
+    r = Resolver(NoApi(), {"guilds": {"not": "a list"}, "channels": "nope"})
+    assert r.cache == {"guilds": None, "channels": {}}
+
+
+# --------------------------------------------------------------------------
+# score()
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("query", "candidate", "expected"),
+    [
+        ("general", "general", 100.0),
+        ("", "general", 0.0),
+        ("general", "", 0.0),
+        ("", "", 0.0),
+        ("cu dem", "cú đêm", 100.0),
+        ("General  Chat", "general chat", 100.0),
+    ],
+)
+def test_score_exact_cases(query, candidate, expected):
+    assert score(query, candidate) == expected
