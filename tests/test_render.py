@@ -264,3 +264,24 @@ def test_summarize_author_without_username_uses_display_name():
 def test_attachment_lines_omit_size_when_unknown():
     msg = {"attachments": [{"filename": "a.bin", "url": "u"}, {"url": "v", "size": "big"}]}
     assert attachment_lines(msg) == ["a.bin: u", "file: v"]
+
+
+def test_attachment_lines_tolerate_missing_or_null():
+    assert attachment_lines({}) == []
+    assert attachment_lines({"attachments": None}) == []
+
+
+def test_reaction_summary_joins_and_handles_missing_emoji():
+    msg = {"reactions": [{"emoji": {"name": "👍"}, "count": 3}, {"emoji": None, "count": 1}, {}]}
+    assert reaction_summary(msg) == "👍x3  ?x1  ?x0"
+
+
+def test_reaction_summary_empty():
+    assert reaction_summary({}) == ""
+    assert reaction_summary({"reactions": None}) == ""
+
+
+def test_oldest_first_reverses_without_mutating():
+    original = list(MESSAGES)
+    assert [m["id"] for m in oldest_first(MESSAGES)] == ["1", "2"]
+    assert original == MESSAGES
