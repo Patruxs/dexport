@@ -75,3 +75,106 @@ or headers. The full account of what dexport does with your session is in
 
 You do **not** need to run `playwright install` — dexport connects to
 Discord's existing Electron process rather than launching its own browser.
+
+## Install
+
+dexport is not on PyPI; install it from the repository:
+
+```bash
+pipx install git+https://github.com/Patruxs/dexport
+# or, from a local checkout:
+pipx install .
+# or, for development (editable):
+pip install -e ".[dev]"
+```
+
+## First run
+
+dexport needs the Discord desktop client to expose a CDP port. If it isn't
+already, dexport will try to launch Discord with `--remote-debugging-port`.
+Because Discord uses a single-instance lock, an already-open client started
+*without* that flag can't be upgraded in place — so either fully quit Discord
+first, or let dexport restart it for you:
+
+```bash
+dexport --restart whoami
+```
+
+If it prints your account, the foundation works:
+
+```
+Logged in as YourName (@yourname)  (123456789012345678)
+```
+
+You can pin the port and binary so future runs are frictionless:
+
+```bash
+dexport configure --port 9222 --binary /opt/discord/Discord --show
+```
+
+## Usage
+
+Connection flags (`--port`, `--restart`, `--binary`) are **global** — they go
+before the sub-command:
+
+```bash
+dexport [--port 9222] [--restart] [--binary /path/to/Discord] <command> [options]
+```
+
+`dexport --version` prints the installed version and exits.
+
+### Read
+
+```bash
+dexport whoami
+dexport guilds
+dexport channels -g "my server"
+dexport read     -g "my server" -c "general" --limit 100
+```
+
+### Export (Markdown or JSON)
+
+```bash
+dexport export -g "my server" -c "general" --format md -o out.md
+dexport export --channel-id 123456789012345678 -f json -o out.json
+```
+
+### Write
+
+Write commands ask for confirmation by default, add a short human-like pause
+before acting, and support `--dry-run` to preview the exact HTTP request
+without sending anything.
+
+```bash
+dexport send   -g "my server" -c "general" -m "hello!"
+dexport reply  -g "my server" -c "general" --to <message_id> -m "replying"
+dexport react  -g "my server" -c "general" --to <message_id> -e 👍
+dexport edit   --channel-id <channel_id> --to <message_id> -m "edited text"
+dexport delete --channel-id <channel_id> --to <message_id>
+
+dexport send -g "my server" -c "general" -m "hi" --yes       # skip confirmation
+dexport send -g "my server" -c "general" -m "hi" --dry-run   # preview only
+```
+
+### Command reference
+
+| Command | Purpose |
+| --- | --- |
+| `whoami` | Verify the session; prints your account. |
+| `guilds` | List servers your account is in. |
+| `channels` | List channels in a server. |
+| `read` | Print recent messages from a channel. |
+| `export` | Export channel history to a Markdown or JSON file. |
+| `send` | Send a message to a channel. |
+| `reply` | Reply to a specific message. |
+| `react` | Add a reaction (unicode emoji or `name:id`) to a message. |
+| `edit` | Edit one of your own messages. |
+| `delete` | Delete a message. |
+| `configure` | View or update `~/.dexport/config.json`. |
+
+Run `dexport <command> --help` for the full option list of any command.
+
+Guild/channel names are matched diacritics-insensitively and fuzzily, so
+`-g "cu dem"` finds `cú đêm`. For scripting, pass `--guild-id` /
+`--channel-id` to skip the fuzzy lookup and avoid any matching ambiguity;
+with `--channel-id` the resolver is not consulted at all.
