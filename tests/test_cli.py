@@ -526,3 +526,31 @@ def test_export_unknown_format_fails_without_writing(runner, fake_dx, tmp_path):
     assert "error:" in result.output
     assert "xml" in result.output
     assert not out.exists()
+
+
+def test_send_resolves_names_confirms_pauses_and_posts(runner, fake_dx):
+    fake_dx.api.queue(200, {"id": "999"})
+    result = runner.invoke(
+        app, ["send", "-g", "cu dem", "-c", "luoi chat tong", "-m", "hi", "--yes"]
+    )
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("POST", "/channels/10/messages", {"content": "hi"})]
+    assert "Sent message 999 to cú đêm #lười-chat-tổng" in result.output
+    assert len(fake_dx.pauses) == 1
+
+
+def test_send_declined_at_prompt_sends_nothing(runner, fake_dx):
+    result = runner.invoke(app, ["send", "--channel-id", CHANNEL_ID, "-m", "hi"], input="n\n")
+    assert result.exit_code == 0, result.output
+    assert f"Send message in channel {CHANNEL_ID}?" in result.output
+    assert fake_dx.api.calls == []
+    assert fake_dx.pauses == []
+    assert "Sent" not in result.output
+
+
+def test_send_accepted_at_prompt_posts(runner, fake_dx):
+    fake_dx.api.queue(200, {"id": "999"})
+    result = runner.invoke(app, ["send", "--channel-id", CHANNEL_ID, "-m", "hi"], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("POST", f"/channels/{CHANNEL_ID}/messages", {"content": "hi"})]
+    assert "Sent message 999" in result.output
