@@ -554,3 +554,96 @@ def test_send_accepted_at_prompt_posts(runner, fake_dx):
     assert result.exit_code == 0, result.output
     assert fake_dx.api.calls == [("POST", f"/channels/{CHANNEL_ID}/messages", {"content": "hi"})]
     assert "Sent message 999" in result.output
+
+
+EXECUTE_CASES = [
+    pytest.param(
+        ["send", "-m", "hi"],
+        (200, {"id": "999"}),
+        ("POST", f"/channels/{CHANNEL_ID}/messages", {"content": "hi"}),
+        "Sent message 999",
+        id="send",
+    ),
+    pytest.param(
+        ["reply", "--to", "42", "-m", "hi"],
+        (200, {"id": "1000"}),
+        (
+            "POST",
+            f"/channels/{CHANNEL_ID}/messages",
+            {
+                "content": "hi",
+                "message_reference": {
+                    "channel_id": CHANNEL_ID,
+                    "message_id": "42",
+                    "fail_if_not_exists": False,
+                },
+            },
+        ),
+        "Replied with message 1000",
+        id="reply",
+    ),
+    pytest.param(
+        ["react", "--to", "42", "-e", "👍"],
+        (204, None),
+        ("PUT", f"/channels/{CHANNEL_ID}/messages/42/reactions/%F0%9F%91%8D/@me", None),
+        "Reacted 👍 to 42",
+        id="react",
+    ),
+    pytest.param(
+        ["edit", "--to", "42", "-m", "fixed"],
+        (200, {"id": "42"}),
+        ("PATCH", f"/channels/{CHANNEL_ID}/messages/42", {"content": "fixed"}),
+        "Edited message 42",
+        id="edit",
+    ),
+    pytest.param(
+        ["delete", "--to", "42"],
+        (204, None),
+        ("DELETE", f"/channels/{CHANNEL_ID}/messages/42", None),
+        "Deleted message 42",
+        id="delete",
+    ),
+]
+
+
+@pytest.mark.parametrize(("args", "response", "expected_call", "done"), EXECUTE_CASES)
+def test_write_verb_executes_request_and_reports(
+    runner, fake_dx, args, response, expected_call, done
+):
+    fake_dx.api.queue(*response)
+    result = runner.invoke(app, [*args, "--channel-id", CHANNEL_ID, "--yes"])
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [expected_call]
+    assert done in result.output
+    assert f"channel {CHANNEL_ID}" in result.output
+    assert len(fake_dx.pauses) == 1
+
+
+def test_api_error_is_reported_as_error_line(runner, fake_dx):
+    fake_dx.api.queue(403, {"message": "Missing Access"})
+    result = runner.invoke(app, ["send", "--channel-id", CHANNEL_ID, "-m", "hi", "--yes"])
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "403" in result.output
+    assert "Missing Access" in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert fake_dx.closed == 1
+
+
+def test_error_while_acquiring_is_reported(runner, monkeypatch):
+    def acquire(**kwargs: Any) -> FakeDexport:
+        raise LauncherError("Discord binary not found")
+
+    monkeypatch.setattr("dexport.cli.common.Dexport.acquire", acquire)
+    result = runner.invoke(app, ["whoami"])
+    assert result.exit_code == 1
+    assert "error: Discord binary not found" in result.output
+
+
+def test_global_port_and_restart_reach_acquire(runner, fake_dx):
+    fake_dx.api.queue(200, {"id": "1", "username": "me"})
+    result = runner.invoke(app, ["--port", "1234", "--restart", "whoami"])
+    assert result.exit_code == 0, result.output
+    [call] = fake_dx.acquire_calls
+    assert call["force_restart"] is True
+    assert call["settings"].port == 1234
