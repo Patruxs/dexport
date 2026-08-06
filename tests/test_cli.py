@@ -480,3 +480,49 @@ def test_read_renders_messages_oldest_first(runner, fake_dx):
     assert f"channel {CHANNEL_ID}" in result.output
     assert result.output.index("alice") < result.output.index("bob")
     assert result.output.index("first") < result.output.index("second")
+
+
+def test_read_by_names_resolves_and_shows_empty_channel(runner, fake_dx):
+    fake_dx.api.queue(200, [])
+    result = runner.invoke(app, ["read", "-g", "cu dem", "-c", "luoi chat tong"])
+    assert result.exit_code == 0, result.output
+    assert fake_dx.api.calls == [("GET", "/channels/10/messages?limit=50", None)]
+    assert "cú đêm #lười-chat-tổng" in result.output
+    assert "(no messages)" in result.output
+
+
+def test_export_json_writes_file_oldest_first(runner, fake_dx, tmp_path):
+    fake_dx.api.queue(200, MESSAGES_NEWEST_FIRST)
+    out = tmp_path / "out.json"
+    result = runner.invoke(
+        app, ["export", "--channel-id", CHANNEL_ID, "-f", "json", "-o", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "fetched 2..." in result.output
+    assert "Exported 2 messages" in result.output
+    assert str(out) in result.output
+    assert [m["id"] for m in json.loads(out.read_text(encoding="utf-8"))] == ["1", "2"]
+
+
+def test_export_default_path_is_markdown_in_cwd(runner, fake_dx, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    fake_dx.api.queue(200, MESSAGES_NEWEST_FIRST)
+    result = runner.invoke(app, ["export", "--channel-id", CHANNEL_ID])
+    assert result.exit_code == 0, result.output
+    out = tmp_path / f"channel-{CHANNEL_ID}.md"
+    assert f"Exported 2 messages -> {out.name}" in result.output
+    text = out.read_text(encoding="utf-8")
+    assert text.startswith(f"# channel {CHANNEL_ID}")
+    assert text.index("first") < text.index("second")
+
+
+def test_export_unknown_format_fails_without_writing(runner, fake_dx, tmp_path):
+    fake_dx.api.queue(200, [])
+    out = tmp_path / "out.xml"
+    result = runner.invoke(
+        app, ["export", "--channel-id", CHANNEL_ID, "--format", "xml", "-o", str(out)]
+    )
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "xml" in result.output
+    assert not out.exists()
