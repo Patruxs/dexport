@@ -192,3 +192,32 @@ def test_env_binary_overrides_file_but_is_not_persisted(tmp_path, monkeypatch):
     on_disk = json.loads(paths.config.read_text(encoding="utf-8"))
     assert on_disk["discord_binary"] == "/from-file"
     assert on_disk["port"] == 4000
+
+
+# --------------------------------------------------------------------------
+# On-disk / `configure --show` format
+# --------------------------------------------------------------------------
+
+
+EXPECTED_KEY_ORDER = ["port", "discord_binary", "floor_delay_min", "floor_delay_max"]
+
+
+def test_to_dict_key_order():
+    assert list(Settings().to_dict()) == EXPECTED_KEY_ORDER
+
+
+def test_saved_file_preserves_key_order(tmp_path):
+    paths = Paths(tmp_path)
+    Settings().save(paths)
+    assert list(json.loads(paths.config.read_text(encoding="utf-8"))) == EXPECTED_KEY_ORDER
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        Settings(),
+        Settings(port=1, discord_binary="/x", floor_delay_min=0.1, floor_delay_max=0.9),
+    ],
+)
+def test_from_dict_to_dict_roundtrip(settings):
+    assert Settings.from_dict(settings.to_dict()) == settings
