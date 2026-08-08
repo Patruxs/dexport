@@ -236,3 +236,37 @@ def test_close_persists_resolver_cache_and_closes_session(pipeline, dexport_home
         json.loads((dexport_home / "cache.json").read_text(encoding="utf-8")) == dx.resolver.cache
     )
     assert pipeline.session.closed
+
+
+def test_save_persists_without_closing(pipeline):
+    dx = Dexport.acquire(settings=_settings())
+    dx.resolver.cache["guilds"] = [{"id": "3", "name": "saved"}]
+    dx.save()
+    assert load_cache()["guilds"] == [{"id": "3", "name": "saved"}]
+    assert not pipeline.session.closed
+
+
+def test_close_still_closes_session_when_save_fails(pipeline, monkeypatch):
+    def broken_save(cache, paths=None):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("dexport.client.save_cache", broken_save)
+    dx = Dexport.acquire(settings=_settings())
+    with pytest.raises(OSError, match="disk full"):
+        dx.close()
+    assert pipeline.session.closed
+
+
+def test_context_manager_yields_handle_and_closes_on_exit(pipeline, dexport_home):
+    with Dexport.acquire(settings=_settings()) as dx:
+        assert isinstance(dx, Dexport)
+        dx.resolver.cache["guilds"] = [{"id": "5", "name": "ctx"}]
+        assert not pipeline.session.closed
+    assert pipeline.session.closed
+    assert load_cache()["guilds"] == [{"id": "5", "name": "ctx"}]
+
+
+def test_context_manager_closes_on_exception(pipeline):
+    with pytest.raises(RuntimeError, match="boom"), Dexport.acquire(settings=_settings()):
+        raise RuntimeError("boom")
+    assert pipeline.session.closed
