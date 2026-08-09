@@ -65,3 +65,25 @@ memory for the duration of a single command. `~/.dexport/` holds just
 `notice-shown` (the marker for the one-time warning above) — never credentials
 or headers. The full account of what dexport does with your session is in
 [SECURITY.md](SECURITY.md).
+
+## Requirements
+
+- Python 3.11+
+- The Discord desktop client (Windows, macOS, or Linux — including Flatpak)
+  installed and logged in
+- Discord PTB / Canary are also detected on Linux
+
+You do **not** need to run `playwright install` — dexport connects to
+Discord's existing Electron process rather than launching its own browser.
+
+## Install
+
+dexport is not on PyPI; install it from the repository:
+
+```bash
+pipx install git+https://github.com/Patruxs/dexport
+# or, from a local checkout:
+pipx install .
+# or, for development (editable):
+pip install -e ".[dev]"
+```
