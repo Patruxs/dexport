@@ -62,3 +62,61 @@ forbidden names such as `cookie`, `host`, `origin`, `referer`, `user-agent`,
 re-added as `application/json` by `ApiCore` only when a request has a body.
 The result lives on `ApiCore.headers` for the duration of one command and is
 never written to disk.
+
+## The in-page fetch contract
+
+`ApiCore.execute` runs `_FETCH_JS` (an `async (req) => {...}` arrow function)
+via `Session.evaluate` with a single argument `{url, method, headers, body}`
+where `body` is a string or `null`. The function always resolves — it never
+rejects — to a `FetchResult`:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `status` | int | HTTP status; `0` when `fetch` itself threw |
+| `headers` | `{name: value}` | response headers (names lower-cased by the browser) |
+| `body` | str | response text (may be empty, e.g. 204) |
+| `error` | str or `null` | `String(e)` of a thrown `fetch`, else `null` |
+
+Because the request is same-origin there is no CORS and every response header
+is readable, including `X-RateLimit-*`. `_check_fetch_result` verifies that the
+reply is a dict containing all four keys and raises `SessionError` immediately
+otherwise: a broken JS↔Python contract must fail fast rather than look like a
+flaky network, which would be retried with backoff for about half a minute.
+
+## Rate limiting and retries
+
+`RateLimiter` (`ratelimit.py`) keeps one entry per **route key**:
+`route_key(method, path)` = `METHOD path` with the query string dropped and
+every run of 15+ digits replaced by `{id}`, e.g. `GET /channels/{id}/messages`.
+This approximates Discord's per-route + major-parameter buckets;
+`X-RateLimit-Bucket` is deliberately not tracked.
+
+- `acquire(key)` runs before every request: (1) if a global limit is active,
+  sleep until it clears; (2) if the route's `remaining` is 0 and its reset is
+  in the future, sleep until then; (3) sleep the **floor delay**, a uniform
+  random value in `[floor_delay_min, floor_delay_max]` (0.25–0.6 s by default,
+  configurable in `config.json`).
+- `update(key, headers)` runs after every response and records
+  `x-ratelimit-remaining` and `now + x-ratelimit-reset-after` for the route.
+  Both headers must be present; unparsable values are ignored.
+- `note_429(headers, body, key)` picks `retry_after` from the JSON body
+  (seconds), else the `retry-after` header, else 1.0 s. If the
+  `x-ratelimit-global` header is present or the body has `global: true`, every
+  route is blocked until `now + retry_after`; otherwise only that route is.
+
+`ApiCore.execute` (`api.py`) wraps this in a retry loop with three
+**independent budgets** of `max_retries` (5) each, so an early network blip or
+500 does not eat the rate-limit allowance:
+
+| Outcome | Action |
+| --- | --- |
+| network failure (`error` set or `status == 0`) | sleep `min(2^n, 10)` s — 2, 4, 8, 10, 10 — and retry; then `ApiError(status=0)` |
+| 429 | `note_429`, sleep `retry_after + 0.1` s, retry; after 5 → `RateLimitError` |
+| 401 | at most **one** re-auth per failure streak: call `header_refresh` (re-runs `capture_headers`) and retry immediately, consuming no budget. If the refresh itself throws, the 401 is raised as `ApiError` with that failure appended to the message and set as `__cause__`. |
+| 5xx | sleep `min(2^n, 10)` s and retry; after 5 → `ApiError` |
+| 2xx | re-arms the 401 latch; returned |
+| any other non-2xx | `ApiError(status, parsed body)` — or returned as-is with `raise_for_status=False` |
+
+All sleeps go through `limiter.sleeper`, so tests inject a no-op. Write verbs
+additionally call `human_pause()` (0.4–1.2 s) after confirmation and before
+executing.
