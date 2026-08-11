@@ -35,6 +35,58 @@ packages = ["dexport", "dexport.cli", "dexport.launcher"]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 
+[tool.coverage.run]
+branch = true
+source = ["dexport"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+# ---------------------------------------------------------------------------
+# Lint / format (ruff)
+# ---------------------------------------------------------------------------
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "UP",       # pyupgrade (modern syntax for the declared python floor)
+    "B",        # bugbear
+    "SIM",      # simplify
+    "C4",       # comprehensions
+    "RUF",      # ruff-specific (incl. unused-noqa)
+    "BLE",      # blind except - must be justified with a noqa comment
+    "S",        # bandit - subprocess/urllib use is deliberate; see noqa notes
+]
+ignore = [
+    "S603",     # subprocess without shell=True is what we want; args are our own
+    "S607",     # partial executable paths (pgrep/flatpak/tasklist) are intentional
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106"]   # asserts and fake tokens in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["dexport"]
+
+# ---------------------------------------------------------------------------
+# Types (mypy)
+# ---------------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.11"
+files = ["dexport"]
+strict = true
+warn_unreachable = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = ["rapidfuzz.*"]
+ignore_missing_imports = true
