@@ -1,0 +1,85 @@
+# Contributing to dexport
+
+Thanks for helping. This file is the practical checklist; the *why* of the
+design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the user-facing
+story is in the [README](README.md).
+
+## Setup
+
+- Python **3.11+** (CI runs 3.11-3.14; `pyproject.toml` pins `requires-python = ">=3.11"`).
+- `make install` creates `./.venv` and does `pip install -e ".[dev]"` (pytest, pytest-cov, ruff, mypy).
+- Every `make` target uses `./.venv` automatically when it exists; override with `make PY=python3 test`.
+- No `playwright install` is needed: dexport attaches to Discord's own Electron process, and the
+  tests never start a browser or open a CDP connection (`tests/test_session.py` monkeypatches
+  `playwright.sync_api.sync_playwright`, so the package only has to be importable).
+- Optional: `pip install pre-commit && pre-commit install` runs ruff on commit (`.pre-commit-config.yaml`).
+
+## The check loop
+
+| Command | What it runs |
+| --- | --- |
+| `make test` | `pytest -q` (offline, sub-second) |
+| `make lint` | `ruff check .` + `ruff format --check .` |
+| `make typecheck` | `mypy dexport` (`strict = true`, `warn_unreachable`, config in `pyproject.toml`) |
+| `make check` | lint + typecheck + test - exactly what CI (`.github/workflows/ci.yml`) runs |
+| `make fmt` | `ruff check --fix .` + `ruff format .` - auto-fixes what it can |
+
+Run a single test with `.venv/bin/python -m pytest tests/test_api.py::test_401_triggers_single_reauth -q`
+(or `-k <substring>`). Ruff is configured with line length 100 and the rule sets
+`E W F I UP B SIM C4 RUF BLE S`; a blind `except Exception` needs a `# noqa: BLE001 - <reason>`.
+`UP` rules target `py311`, so ruff (not your interpreter, which may be newer) is what keeps
+3.12+-only syntax out.
+
+## How the tests are organised
+
+Everything under `tests/` runs without Discord, without a real Playwright/CDP connection and
+without the network.
+The shared fakes live in `tests/conftest.py` (import them with `from conftest import FakeApi`):
+
+- `dexport_home` (autouse) points `DEXPORT_HOME` at a temp dir and clears `DEXPORT_PORT` /
+  `DEXPORT_DISCORD_BINARY`, so no test can read or write your real `~/.dexport`.
+- `FakeSession([...])` + `resp(status, body, headers, error)` / `json_resp(status, payload)` stand in
+  for the CDP session when testing `ApiCore` (`tests/test_api.py`). It records every payload in `.calls`.
+- `FakeApi` stands in for `ApiCore` where code takes one (`messages.py`, `resolver.py`, CLI helpers):
+  `api.queue(status, payload)` queues an `ApiResponse`, `api.calls` is a list of `(METHOD, path, body)`,
+  and an unexpected extra request raises.
+- `resolver_cache` is a ready-made `cache.json` dict with Vietnamese names for diacritics tests.
+- `no_sleep_limiter` is a `RateLimiter` with `clock`/`sleeper`/`jitter` stubbed out.
+
+**No test may sleep.** Anything time-dependent takes injectable callables: `RateLimiter(clock=, sleeper=,
+jitter=)`, `human_pause(sleeper=, jitter=)`, `ensure_discord(wait_timeout=, poll_interval=)`. Pure
+functions are split out precisely so they can be tested directly: `session.py`'s `is_discord_url` /
+`score_page` / `pick_app_page`, `launcher/discovery.py`'s `candidate_paths(system=, home=, env=,
+probe_flatpak=False)` and `launch_command`, `headers.py`'s `sanitize_headers`, `render.py`'s exporters.
+Do not edit `conftest.py` for one test's convenience; put helpers in your own test module.
+
+## Invariants that must not break
+
+- **On-disk formats are stable.** `config.json` is exactly the `Settings` dataclass fields
+  (`port`, `discord_binary`, `floor_delay_min`, `floor_delay_max`) and
+  `tests/test_config.py::test_settings_roundtrip_preserves_json_keys` asserts the full dict.
+  `cache.json` is `{"guilds": list | None, "channels": {guild_id: [ChannelRef]}}` and
+  `resolver.normalize_cache` must keep repairing anything older or corrupt. Missing/corrupt files
+  always fall back to defaults, never raise.
+- **Nothing sensitive on disk.** The captured headers (including `authorization`) live only in
+  `ApiCore.headers` for the lifetime of one command. Never log, print, cache or persist them, and
+  never add a header-shaped key to either JSON file.
+- **CLI surface and output are user-facing.** Global flags (`--port/--restart/--binary/--version`)
+  go before the sub-command; every channel command accepts the `-g/-c/--guild-id/--channel-id`
+  quartet from `cli/common.py`; expected failures print `error: ...` to stderr and exit 1 via
+  `fail()`. The README command and config tables are guarded by `tests/test_docs.py`.
+- **Write verbs always confirm unless `--yes`.** `run_write` calls `confirm_or_exit` (default answer
+  is No, declining exits 0) before `human_pause()` and `dx.api.execute()`. Do not add a write path
+  that bypasses `run_write`.
+- **`--dry-run` with `--channel-id` never contacts (or launches) Discord.** `run_write` previews
+  `build(channel_id)` and returns before `connect(ctx)`. With `-g/-c` a dry run does connect to
+  resolve names, but must still never execute the request.
+- **The previewed request is the sent request.** Builders in `messages.py` return one `ApiRequest`;
+  `preview(req)` and `dx.api.execute(req)` receive the same object.
+- **Modules under `dexport/` import each other relatively** (`from .api import ApiCore`). The directory
+  is `dexport/` but the import name is `dexport` (`package-dir` in `pyproject.toml`), so an absolute
+  `from dexport.x import y` inside `dexport/` picks up the *installed* copy, not your working tree.
+  A new sub-package under `dexport/` must also be added to `packages` in `pyproject.toml`;
+  `tests/test_docs.py::test_pyproject_lists_every_subpackage` fails if you forget.
+- **`session.py` is the only module that imports Playwright** (lazily, inside `Session.connect`).
+  Everything else talks to the `Evaluator` / `RequestWatcher` protocols so it can be faked.
