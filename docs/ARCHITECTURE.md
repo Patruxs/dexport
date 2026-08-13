@@ -172,3 +172,59 @@ persisted. `configure` deliberately starts from `Settings.load_file()` (no env
 overrides) so a transient `DEXPORT_PORT` can never be baked into the file;
 consequently `configure --show` prints the stored values, not the env-merged
 ones.
+
+## On-disk formats
+
+Both files live under `$DEXPORT_HOME` (default `~/.dexport`), are written
+atomically (`<file>.tmp` + `os.replace`) as pretty JSON with `ensure_ascii=False`,
+and never contain headers or tokens. Their shapes are user-facing contracts.
+
+`config.json` — always exactly these four keys when written by dexport:
+
+```json
+{
+  "port": 9222,
+  "discord_binary": null,
+  "floor_delay_min": 0.25,
+  "floor_delay_max": 0.6
+}
+```
+
+`discord_binary` is a path or the pseudo-path `flatpak:com.discordapp.Discord`;
+`null`/empty means auto-detect. Missing keys take defaults; a missing or
+corrupt file is treated as `{}`.
+
+`cache.json` — the resolver cache, persisted on every `Dexport.close()`:
+
+```json
+{
+  "guilds": [{"id": "123456789012345678", "name": "cú đêm"}],
+  "channels": {
+    "123456789012345678": [
+      {"id": "234567890123456789", "name": "general", "type": 0, "parent_id": null}
+    ]
+  }
+}
+```
+
+`guilds` is `null` until first fetched (an account in zero guilds caches
+`[]`); `channels` is keyed by guild ID. Entries are the `GuildRef` /
+`ChannelRef` TypedDicts from `models.py`. `normalize_cache` repairs a
+malformed file in place, `--refresh` on `guilds`/`channels` refetches, and the
+file can be deleted at any time.
+
+## Discord endpoints used
+
+Base: `https://discord.com/api/v9` (`DISCORD_API_BASE` in `api.py`).
+
+| Method and path | Used by |
+| --- | --- |
+| `GET /users/@me` | `ApiCore.me()` → `whoami` |
+| `GET /users/@me/guilds` | `Resolver.guilds()` |
+| `GET /guilds/{guild_id}/channels` | `Resolver.channels()` |
+| `GET /channels/{channel_id}/messages?limit=N&before=ID` | `history_request` / `fetch_history` → `read`, `export` (N ≤ 100; pages until fewer than requested come back) |
+| `POST /channels/{channel_id}/messages` | `send_message_request` → `send`; body `{"content"}`, plus `message_reference: {channel_id, message_id, fail_if_not_exists: false}` for `reply` |
+| `PUT /channels/{channel_id}/messages/{id}/reactions/{emoji}/@me` | `add_reaction_request` → `react` (`encode_emoji`: `<:name:id>` / `<a:name:id>` collapse to `name:id`, then the whole segment is percent-encoded — `%F0%9F%91%8D`, `name%3Aid`) |
+| `DELETE /channels/{channel_id}/messages/{id}/reactions/{emoji}/@me` | `remove_reaction_request` (builder only; no CLI verb yet) |
+| `PATCH /channels/{channel_id}/messages/{id}` | `edit_message_request` → `edit`; body `{"content"}` |
+| `DELETE /channels/{channel_id}/messages/{id}` | `delete_message_request` → `delete` |
