@@ -212,3 +212,75 @@ corrupt file is treated as `{}`.
 `ChannelRef` TypedDicts from `models.py`. `normalize_cache` repairs a
 malformed file in place, `--refresh` on `guilds`/`channels` refetches, and the
 file can be deleted at any time.
+
+## Discord endpoints used
+
+Base: `https://discord.com/api/v9` (`DISCORD_API_BASE` in `api.py`).
+
+| Method and path | Used by |
+| --- | --- |
+| `GET /users/@me` | `ApiCore.me()` → `whoami` |
+| `GET /users/@me/guilds` | `Resolver.guilds()` |
+| `GET /guilds/{guild_id}/channels` | `Resolver.channels()` |
+| `GET /channels/{channel_id}/messages?limit=N&before=ID` | `history_request` / `fetch_history` → `read`, `export` (N ≤ 100; pages until fewer than requested come back) |
+| `POST /channels/{channel_id}/messages` | `send_message_request` → `send`; body `{"content"}`, plus `message_reference: {channel_id, message_id, fail_if_not_exists: false}` for `reply` |
+| `PUT /channels/{channel_id}/messages/{id}/reactions/{emoji}/@me` | `add_reaction_request` → `react` (`encode_emoji`: `<:name:id>` / `<a:name:id>` collapse to `name:id`, then the whole segment is percent-encoded — `%F0%9F%91%8D`, `name%3Aid`) |
+| `DELETE /channels/{channel_id}/messages/{id}/reactions/{emoji}/@me` | `remove_reaction_request` (builder only; no CLI verb yet) |
+| `PATCH /channels/{channel_id}/messages/{id}` | `edit_message_request` → `edit`; body `{"content"}` |
+| `DELETE /channels/{channel_id}/messages/{id}` | `delete_message_request` → `delete` |
+
+## Test seams
+
+Everything below the CLI is exercised offline (see `tests/conftest.py`):
+
+- **Protocols.** `ApiCore` takes an `Evaluator` (`session.py`:
+  `evaluate(expression, arg)`), `capture_headers` a `RequestWatcher`
+  (`headers.py`: `wait_for_request(predicate, *, timeout, reload,
+  reload_timeout)`), and `Resolver` a `JsonGetter` (`resolver.py`:
+  `get_json(path)`). Each Protocol has a single method; tests stand them in
+  with `FakeSession` / `FakeApi`.
+- **Time.** `RateLimiter(clock=, sleeper=, jitter=)`; `ApiCore` sleeps through
+  `limiter.sleeper` too (`no_sleep_limiter` fixture); `human_pause(sleeper=,
+  jitter=)`.
+- **Playwright.** `session.py` is the only module that imports it — lazily
+  inside `Session.connect` and under `TYPE_CHECKING`. Page selection
+  (`is_discord_url`, `score_page`, `pick_app_page`) is pure.
+- **Launcher.** `candidate_paths(system=, home=, env=, probe_flatpak=)` and
+  `launch_command(binary, port)` are pure; `is_discord_running(system)`,
+  `kill_discord(system, grace)` and `launch_discord(binary, port, system)`
+  take the platform explicitly.
+- **Disk.** `Paths.default(env)` and `Settings.load(paths, env)` take the
+  environment explicitly; an autouse fixture points `DEXPORT_HOME` at a temp
+  dir and clears `DEXPORT_PORT`/`DEXPORT_DISCORD_BINARY`.
+- **Output.** `render_terminal(console=)` accepts a Rich `Console`; exporters
+  are pure `(messages, title) -> str`.
+
+## How to ...
+
+**Add a write verb.** Add a builder in `messages.py` returning an `ApiRequest`
+(next to `send_message_request`). Then add a ~10-line function in
+`cli/write.py` that declares its options and calls `run_write(ctx,
+Target(...), build=lambda cid: your_request(cid, ...), confirm="...",
+done=lambda r, label: "...", yes=yes, dry_run=dry_run)`. Confirmation,
+`--dry-run`, the human pause and error handling come for free. Add a builder
+test in `tests/test_messages.py` and a row to the README command reference.
+
+**Add an export format.** Write a `(messages, title) -> str` function in
+`render.py` (it receives Discord's newest-first list; use `oldest_first`),
+register it in `EXPORTERS` and its file extension in `EXPORT_EXTENSIONS`.
+`get_exporter`, `export_to_file`, `export --format` and `default_export_path`
+pick it up.
+
+**Add a config key.** Add a field with a default to `Settings` and read it in
+`Settings.from_dict` (it enumerates fields explicitly so bad values can fall
+back). If it needs an env var or CLI flag, extend `with_env_overrides` /
+`with_overrides` and the `configure` command. Add a row to the README
+Configuration table; `tests/test_docs.py` cross-checks that table against
+`Settings`, so keep the two in sync.
+
+**Support a new Discord install location.** Add the path to the matching
+`_windows_candidates` / `_macos_candidates` / `_linux_candidates` function in
+`launcher/discovery.py` (or a new entry in `_LINUX_USER_INSTALLS` for a
+`$XDG_CONFIG_HOME/<dir>/app-*/<exe>` style install). If it needs a different
+argv, extend `launch_command`. `candidate_paths` accepts `system`, `home` and
+`env` so the new path can be unit-tested with a fake home directory.
