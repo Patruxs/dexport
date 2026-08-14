@@ -178,3 +178,78 @@ Guild/channel names are matched diacritics-insensitively and fuzzily, so
 `-g "cu dem"` finds `cú đêm`. For scripting, pass `--guild-id` /
 `--channel-id` to skip the fuzzy lookup and avoid any matching ambiguity;
 with `--channel-id` the resolver is not consulted at all.
+
+## Configuration
+
+Settings are resolved in this order: CLI flag > environment variable >
+`~/.dexport/config.json` > built-in default.
+
+| Config key | Env var | CLI flag | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `port` | `DEXPORT_PORT` | `--port` | `9222` | CDP port Discord exposes. |
+| `discord_binary` | `DEXPORT_DISCORD_BINARY` | `--binary` | auto-detected | Path to the Discord executable. |
+| `floor_delay_min` | — | — | `0.25` | Self-imposed delay window (seconds) before every request — lower bound. |
+| `floor_delay_max` | — | — | `0.6` | Self-imposed delay window (seconds) before every request — upper bound. |
+| — | `DEXPORT_HOME` | — | `~/.dexport` | Where config/cache are stored. |
+
+`dexport configure --port 9222 --binary /path/to/Discord` writes these to
+`~/.dexport/config.json`. `dexport configure --show` prints the stored config
+with defaults filled in (environment overrides are deliberately *not* applied,
+so they can never be written back to the file). `floor_delay_min` /
+`floor_delay_max` have no flag or env var — edit them in `config.json`
+directly.
+
+## Rate limiting & safety
+
+- A self-imposed floor delay (250–600 ms + jitter) before every request. The
+  window is configurable via `floor_delay_min` / `floor_delay_max` in
+  `config.json`.
+- Reads `X-RateLimit-Remaining` / `X-RateLimit-Reset-After` per route and
+  sleeps before a route runs dry.
+- On `429`, honours `retry_after` (global limits back off across all routes).
+- Write commands add an extra human-like pause and confirm before acting
+  unless `--yes` is passed.
+
+The exact limiter and retry rules are spelled out in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#rate-limiting-and-retries).
+
+## Project layout
+
+The package lives in `dexport/` and is imported as `dexport`:
+
+```
+.                     # repo root
+├── pyproject.toml    # name = "dexport", entry point, tool config
+├── tests/  docs/  Makefile  README.md
+└── dexport/              # the package — imported as `dexport`, modules below
+    ├── api.py  session.py  ...
+    ├── cli/
+    └── launcher/
+```
+
+`pyproject.toml` maps the directory onto the import name with
+`package-dir = { "dexport" = "dexport" }`, so `import dexport` and the built wheel
+(which ships a normal `dexport/` package) are unaffected. Two consequences for
+contributors: `packages` in `pyproject.toml` is hand-maintained because
+auto-discovery cannot see through the rename, and modules must use **relative**
+imports (`from .api import ApiCore`) — an absolute `from dexport.api import ...`
+inside `dexport/` resolves to the installed copy, not your working tree.
+
+| Module | Responsibility |
+| --- | --- |
+| `launcher/` | Is the CDP port alive? Else find Discord and launch it with the debug flag, then poll the port. `discovery.py` locates the binary per OS (stable/PTB/Canary, Flatpak); `process.py` starts, finds and kills the process. |
+| `session.py` | Attach over CDP, pick the real app page. The *only* module that touches Playwright. |
+| `headers.py` | Snapshot the client's authorized headers (RAM only) and sanitise them for `fetch`. |
+| `ratelimit.py` | Per-route limiter: floor delay, `X-RateLimit-*` bookkeeping, 429 handling. |
+| `api.py` | In-page `fetch` core + retries — the heart. `ApiRequest` in, `ApiResponse` out. |
+| `resolver.py` | Name → ID with cache and diacritics-aware matching. |
+| `messages.py` | History pagination and the send/reply/react/edit/delete request builders (was `service.py`). |
+| `render.py` | Terminal output + Markdown/JSON export (`EXPORTERS`). |
+| `client.py` | Wires the whole pipeline into `Dexport.acquire()`. |
+| `cli/` | Typer command surface: `app.py` (root + global flags), `common.py` (shared plumbing, `run_write`), `read.py`, `write.py`, `configure.py`. |
+| `config.py` | `Settings` ↔ `config.json`, the resolver cache file, `DEXPORT_HOME` paths. |
+| `models.py` | `ChannelType`, `MESSAGE_CHANNEL_TYPES`, and the `GuildRef`/`ChannelRef` cache shapes. |
+| `errors.py` | The `DexportError` hierarchy the CLI turns into one-line errors. |
+| `util.py` | Pure helpers: diacritics stripping, `normalize`, `is_snowflake`, `human_bytes`. |
+
+`python -m dexport` works as well as the `dexport` entry point.
