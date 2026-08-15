@@ -83,3 +83,57 @@ Do not edit `conftest.py` for one test's convenience; put helpers in your own te
   `tests/test_docs.py::test_pyproject_lists_every_subpackage` fails if you forget.
 - **`session.py` is the only module that imports Playwright** (lazily, inside `Session.connect`).
   Everything else talks to the `Evaluator` / `RequestWatcher` protocols so it can be faked.
+
+## Recipes
+
+### Add a write verb (e.g. `pin`)
+
+1. `dexport/messages.py`: add `pin_message_request(channel_id, message_id) -> ApiRequest` next to
+   `delete_message_request`. Builders are pure and know the URL layout; nothing else does.
+2. `tests/test_messages.py`: assert the builder's `method`, `path` and `body` (and `body_text()` if
+   the body matters). This is the test that guards `--dry-run` output too.
+3. `dexport/cli/write.py`: copy `delete`. Build a `Target(guild, channel, guild_id, channel_id)` and
+   call `run_write(ctx, target, build=lambda cid: ..., confirm="Pin message ...", done=..., yes=yes,
+   dry_run=dry_run)`. Reuse `YesOpt`, `DryRunOpt` and the target option aliases from `cli/common.py`.
+4. README: add the row to the command reference table and an example under "Write"; CHANGELOG entry.
+
+### Add a read command
+
+1. If it needs a new endpoint, add a `*_request` builder (and a pager like `fetch_history` if it
+   paginates) in `dexport/messages.py`; guild/channel listing belongs in `resolver.py`.
+2. `dexport/cli/read.py`: `with connect(ctx) as dx:` fetch inside the block, print after it with
+   `console` (rendering happens after the session is released). Resolve targets with
+   `resolve_channel(dx, Target(...))` or `resolve_guild(dx, guild, guild_id)`.
+3. Test the fetch/paging logic against `FakeApi` (`api.queue(200, payload)`, then inspect `api.calls`).
+4. README command table + CHANGELOG.
+
+### Add an export format
+
+1. `dexport/render.py`: write `to_<fmt>(messages, title=None) -> str` using `oldest_first` and the
+   shared helpers (`display_name`, `format_timestamp`, `attachment_lines`, `reaction_summary`).
+2. Register it in `EXPORTERS` (keys are matched lower-case) and `EXPORT_EXTENSIONS`;
+   `get_exporter` / `export_to_file` / `default_export_path` pick it up automatically.
+3. `tests/test_render.py`: assert chronological order and that attachments/reactions appear.
+4. Update the `--format` help text in `cli/read.py::export` and the README "Export" section.
+
+### Add a config key
+
+1. `dexport/config.py`: add a field with a default to `Settings` and a `_coerce(...)` line in
+   `Settings.from_dict`. Field name == JSON key, so choose it carefully; it is permanent.
+2. Env var: add an `ENV_*` constant and a branch in `Settings.with_env_overrides`.
+3. CLI flag (only if it is a connection-level option): add it to `Settings.with_overrides`,
+   `ConnectionOptions` + `ConnectionOptions.settings()` in `cli/common.py`, and the root callback in
+   `cli/app.py`. User-settable keys also get an option in `cli/configure.py`.
+4. Consume it in `client.py::Dexport.acquire` (that is where `Settings` turns into objects).
+5. Update the expected dict in `test_settings_roundtrip_preserves_json_keys`, the README
+   configuration table, and CHANGELOG.
+
+## Commit hygiene
+
+- Small, single-purpose PRs; `make check` green on every commit.
+- Add a line to `CHANGELOG.md` for anything user-visible (new flag, changed output, new config key).
+- If you touch a command or config key, update the README tables in the same commit -
+  `tests/test_docs.py` will fail otherwise.
+- Do not run `ruff format` over files you did not change; keep diffs reviewable.
+- Commit with the email your GitHub account publishes. If you use GitHub's private-email
+  setting, that is your `<id>+<user>@users.noreply.github.com` address.
