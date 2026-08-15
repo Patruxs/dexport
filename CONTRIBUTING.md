@@ -137,3 +137,17 @@ Do not edit `conftest.py` for one test's convenience; put helpers in your own te
 - Do not run `ruff format` over files you did not change; keep diffs reviewable.
 - Commit with the email your GitHub account publishes. If you use GitHub's private-email
   setting, that is your `<id>+<user>@users.noreply.github.com` address.
+
+## A note on scope
+
+Automating a user account is against Discord's Terms of Service (see the README warning).
+Keep new automation conservative: no bulk/loop verbs, no bypassing `confirm_or_exit` or
+`human_pause`, no lowering the `RateLimiter` floor defaults, and nothing that reads or stores data
+beyond the user's own view.
+
+## Reporting a security problem
+
+Do not open a public issue. Report it privately via
+[GitHub Security Advisories](https://github.com/Patruxs/dexport/security/advisories/new);
+[SECURITY.md](SECURITY.md) has the details, including what dexport does with the session
+headers and which sharp edges are working as intended rather than bugs.
