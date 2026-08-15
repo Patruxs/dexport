@@ -178,3 +178,37 @@ Guild/channel names are matched diacritics-insensitively and fuzzily, so
 `-g "cu dem"` finds `cú đêm`. For scripting, pass `--guild-id` /
 `--channel-id` to skip the fuzzy lookup and avoid any matching ambiguity;
 with `--channel-id` the resolver is not consulted at all.
+
+## Configuration
+
+Settings are resolved in this order: CLI flag > environment variable >
+`~/.dexport/config.json` > built-in default.
+
+| Config key | Env var | CLI flag | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `port` | `DEXPORT_PORT` | `--port` | `9222` | CDP port Discord exposes. |
+| `discord_binary` | `DEXPORT_DISCORD_BINARY` | `--binary` | auto-detected | Path to the Discord executable. |
+| `floor_delay_min` | — | — | `0.25` | Self-imposed delay window (seconds) before every request — lower bound. |
+| `floor_delay_max` | — | — | `0.6` | Self-imposed delay window (seconds) before every request — upper bound. |
+| — | `DEXPORT_HOME` | — | `~/.dexport` | Where config/cache are stored. |
+
+`dexport configure --port 9222 --binary /path/to/Discord` writes these to
+`~/.dexport/config.json`. `dexport configure --show` prints the stored config
+with defaults filled in (environment overrides are deliberately *not* applied,
+so they can never be written back to the file). `floor_delay_min` /
+`floor_delay_max` have no flag or env var — edit them in `config.json`
+directly.
+
+## Rate limiting & safety
+
+- A self-imposed floor delay (250–600 ms + jitter) before every request. The
+  window is configurable via `floor_delay_min` / `floor_delay_max` in
+  `config.json`.
+- Reads `X-RateLimit-Remaining` / `X-RateLimit-Reset-After` per route and
+  sleeps before a route runs dry.
+- On `429`, honours `retry_after` (global limits back off across all routes).
+- Write commands add an extra human-like pause and confirm before acting
+  unless `--yes` is passed.
+
+The exact limiter and retry rules are spelled out in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#rate-limiting-and-retries).
