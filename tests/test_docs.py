@@ -144,3 +144,38 @@ def test_readme_project_layout_has_no_stale_modules():
     assert tokens, "README 'Project layout' table has no module rows"
     stale = sorted(t for t in tokens if not _module_exists(t))
     assert not stale, f"README 'Project layout' lists modules that do not exist: {stale}"
+
+
+# --------------------------------------------------------------------------
+# (2) Configuration
+# --------------------------------------------------------------------------
+
+
+def test_readme_configuration_documents_every_settings_field():
+    documented = _backticked(_section(_readme(), "Configuration"))
+    missing = [f.name for f in dataclasses.fields(Settings) if f.name not in documented]
+    assert not missing, f"README 'Configuration' does not document Settings fields: {missing}"
+
+
+def test_readme_configuration_has_no_stale_keys():
+    keys = _first_column(_section(_readme(), "Configuration"))
+    assert keys, "README 'Configuration' table has no key rows"
+    fields = {f.name for f in dataclasses.fields(Settings)}
+    stale = sorted(keys - fields)
+    assert not stale, f"README 'Configuration' lists keys Settings does not have: {stale}"
+
+
+@pytest.mark.parametrize("env_var", [ENV_HOME, ENV_PORT, ENV_DISCORD_BINARY])
+def test_readme_configuration_documents_env_var(env_var):
+    assert env_var in _backticked(_section(_readme(), "Configuration"))
+
+
+# --------------------------------------------------------------------------
+# (3) Command reference
+# --------------------------------------------------------------------------
+
+
+def test_readme_command_reference_lists_every_command():
+    documented = _backticked(_section(_readme(), "Command reference"))
+    missing = sorted(_registered_commands(app) - documented)
+    assert not missing, f"README 'Command reference' does not list: {missing}"
