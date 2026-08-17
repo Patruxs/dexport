@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in dexport behaves differently than documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Two things before you file:
+
+        - **Never paste an `Authorization` header, a token, or a
+          `X-Super-Properties` value.** dexport does not print them, but if
+          you captured a request some other way, redact it.
+        - Suspected **security** problem? Do not use this form —
+          [report it privately](https://github.com/Patruxs/dexport/security/advisories/new).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: >
+        The exact command line, with IDs and message text replaced by
+        placeholders if you like. `--dry-run` output is welcome.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The error message or unexpected output, verbatim.
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: dexport version
+      description: "`dexport --version`"
+      placeholder: dexport 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: OS, Python, and how Discord is installed
+      placeholder: "Fedora 44, Python 3.13, Discord from Flatpak"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I checked that `dexport --restart whoami` reproduces or rules out a connection problem.
+        - label: I confirmed there is no `Authorization` header or token anywhere in this report.
+          required: true
