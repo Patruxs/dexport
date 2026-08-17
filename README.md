@@ -212,3 +212,73 @@ directly.
 
 The exact limiter and retry rules are spelled out in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#rate-limiting-and-retries).
+
+## Project layout
+
+The package lives in `dexport/` and is imported as `dexport`:
+
+```
+.                     # repo root
+├── pyproject.toml    # name = "dexport", entry point, tool config
+├── tests/  docs/  Makefile  README.md
+└── dexport/              # the package — imported as `dexport`, modules below
+    ├── api.py  session.py  ...
+    ├── cli/
+    └── launcher/
+```
+
+`pyproject.toml` maps the directory onto the import name with
+`package-dir = { "dexport" = "dexport" }`, so `import dexport` and the built wheel
+(which ships a normal `dexport/` package) are unaffected. Two consequences for
+contributors: `packages` in `pyproject.toml` is hand-maintained because
+auto-discovery cannot see through the rename, and modules must use **relative**
+imports (`from .api import ApiCore`) — an absolute `from dexport.api import ...`
+inside `dexport/` resolves to the installed copy, not your working tree.
+
+| Module | Responsibility |
+| --- | --- |
+| `launcher/` | Is the CDP port alive? Else find Discord and launch it with the debug flag, then poll the port. `discovery.py` locates the binary per OS (stable/PTB/Canary, Flatpak); `process.py` starts, finds and kills the process. |
+| `session.py` | Attach over CDP, pick the real app page. The *only* module that touches Playwright. |
+| `headers.py` | Snapshot the client's authorized headers (RAM only) and sanitise them for `fetch`. |
+| `ratelimit.py` | Per-route limiter: floor delay, `X-RateLimit-*` bookkeeping, 429 handling. |
+| `api.py` | In-page `fetch` core + retries — the heart. `ApiRequest` in, `ApiResponse` out. |
+| `resolver.py` | Name → ID with cache and diacritics-aware matching. |
+| `messages.py` | History pagination and the send/reply/react/edit/delete request builders (was `service.py`). |
+| `render.py` | Terminal output + Markdown/JSON export (`EXPORTERS`). |
+| `client.py` | Wires the whole pipeline into `Dexport.acquire()`. |
+| `cli/` | Typer command surface: `app.py` (root + global flags), `common.py` (shared plumbing, `run_write`), `read.py`, `write.py`, `configure.py`. |
+| `config.py` | `Settings` ↔ `config.json`, the resolver cache file, `DEXPORT_HOME` paths. |
+| `models.py` | `ChannelType`, `MESSAGE_CHANNEL_TYPES`, and the `GuildRef`/`ChannelRef` cache shapes. |
+| `errors.py` | The `DexportError` hierarchy the CLI turns into one-line errors. |
+| `util.py` | Pure helpers: diacritics stripping, `normalize`, `is_snowflake`, `human_bytes`. |
+
+`python -m dexport` works as well as the `dexport` entry point.
+
+## Development
+
+```bash
+make install    # or: pip install -e ".[dev]"
+make check      # ruff check + ruff format --check + mypy (strict) + pytest
+```
+
+`make check` is exactly what CI runs. The individual targets are `make test`,
+`make lint`, `make fmt` (auto-fix and format) and `make typecheck`; `make help`
+lists them. Every target uses `./.venv` when it exists, so there is nothing to
+activate.
+
+The tests are fully offline. The pure/core logic (normalisation, rate-limiter
+math, emoji encoding, header sanitising, the API retry state machine via a
+fake session) is covered without a running Discord client, and an autouse
+fixture points `DEXPORT_HOME` at a temp dir so your real `~/.dexport` is never
+touched.
+
+To smoke-test against a live client after a change:
+
+```bash
+dexport --restart whoami                                # whole pipeline: launch → attach → snapshot → GET /users/@me
+dexport send --channel-id <channel_id> -m hi --dry-run  # builds and previews a write; contacts nothing
+```
+
+How the pieces fit together — and how to add a command, an export format or
+a config key — is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The
+contribution workflow is in [CONTRIBUTING.md](CONTRIBUTING.md).
