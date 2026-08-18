@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a command, an export format, or a config key.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        dexport deliberately keeps its automation surface **conservative**: it
+        exists to drive your own account at human volume. Requests for mass
+        actions, scheduling, multi-account handling, or anything whose point is
+        to be harder to notice will be closed.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The task, not the API call. What does it look like today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed command or option
+      description: Sketch the CLI you would want.
+      render: shell
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Existing flags, `--dry-run` + a script, `export` + `jq`, …
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This is for personal, low-volume use on my own account and data.
+          required: true
