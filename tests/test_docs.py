@@ -179,3 +179,68 @@ def test_readme_command_reference_lists_every_command():
     documented = _backticked(_section(_readme(), "Command reference"))
     missing = sorted(_registered_commands(app) - documented)
     assert not missing, f"README 'Command reference' does not list: {missing}"
+
+
+def test_readme_command_reference_has_no_stale_commands():
+    listed = _first_column(_section(_readme(), "Command reference"))
+    assert listed, "README 'Command reference' table has no command rows"
+    stale = sorted(listed - _registered_commands(app))
+    assert not stale, f"README 'Command reference' lists unknown commands: {stale}"
+
+
+def test_readme_examples_only_invoke_registered_commands():
+    """Every ``dexport <cmd>`` line in a fenced code block names a real command."""
+    commands = _registered_commands(app)
+    invoked: set[str] = set()
+    for block in _code_blocks(_readme()):
+        for line in block.splitlines():
+            if not line.startswith("dexport "):
+                continue
+            # Skip global flags / their values / placeholders; the first bare
+            # word is the sub-command.
+            for token in line.split()[1:]:
+                if re.fullmatch(r"[a-z][a-z-]*", token):
+                    invoked.add(token)
+                    break
+    assert invoked, "README has no `dexport <command>` examples"
+    unknown = sorted(invoked - commands)
+    assert not unknown, f"README examples invoke unknown commands: {unknown}"
+
+
+# --------------------------------------------------------------------------
+# (4) Entry point
+# --------------------------------------------------------------------------
+
+
+def test_console_script_entry_point_resolves_to_typer_app():
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    entry = data["project"]["scripts"]["dexport"]
+    module_name, _, attr = entry.partition(":")
+    obj = getattr(importlib.import_module(module_name), attr)
+    assert isinstance(obj, typer.Typer)
+    assert obj is app
+
+
+# --------------------------------------------------------------------------
+# (5) Packaging
+# --------------------------------------------------------------------------
+
+
+def test_pyproject_lists_every_subpackage():
+    """``dexport/`` is mapped onto the import name ``dexport``, which defeats
+    setuptools' package auto-discovery — so ``packages`` is hand-written.
+    A sub-package missing from that list is silently absent from the wheel.
+    """
+    expected = {"dexport"} | {
+        "dexport." + init.parent.relative_to(PACKAGE).as_posix().replace("/", ".")
+        for init in PACKAGE.rglob("__init__.py")
+        if init.parent != PACKAGE and "__pycache__" not in init.parts
+    }
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    tool = data["tool"]["setuptools"]
+    assert tool["package-dir"] == {"dexport": "dexport"}
+    declared = set(tool["packages"])
+    assert declared == expected, (
+        "pyproject [tool.setuptools].packages is out of sync with dexport/: "
+        f"missing {sorted(expected - declared)}, stale {sorted(declared - expected)}"
+    )
