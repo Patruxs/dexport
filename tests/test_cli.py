@@ -647,3 +647,57 @@ def test_global_port_and_restart_reach_acquire(runner, fake_dx):
     [call] = fake_dx.acquire_calls
     assert call["force_restart"] is True
     assert call["settings"].port == 1234
+
+
+def test_global_binary_reaches_acquire(runner, fake_dx):
+    fake_dx.api.queue(200, {"id": "1", "username": "me"})
+    result = runner.invoke(app, ["--binary", "/b", "whoami"])
+    assert result.exit_code == 0, result.output
+    [call] = fake_dx.acquire_calls
+    assert call["settings"].discord_binary == "/b"
+    assert call["force_restart"] is False
+
+
+@pytest.mark.parametrize(
+    ("file_port", "env", "args", "expected_port"),
+    [
+        pytest.param(None, {}, [], DEFAULT_CDP_PORT, id="default"),
+        pytest.param(7777, {}, [], 7777, id="config-file"),
+        pytest.param(7777, {"DEXPORT_PORT": "5000"}, [], 5000, id="env-beats-file"),
+        pytest.param(7777, {"DEXPORT_PORT": "5000"}, ["--port", "1234"], 1234, id="flag-beats-env"),
+    ],
+)
+def test_port_precedence_flag_env_file_default(
+    runner, fake_dx, dexport_home, file_port, env, args, expected_port
+):
+    if file_port is not None:
+        dexport_home.mkdir(parents=True, exist_ok=True)
+        (dexport_home / "config.json").write_text(json.dumps({"port": file_port}))
+    fake_dx.api.queue(200, {"id": "1", "username": "me"})
+    result = runner.invoke(app, [*args, "whoami"], env=env)
+    assert result.exit_code == 0, result.output
+    [call] = fake_dx.acquire_calls
+    assert call["settings"].port == expected_port
+
+
+# --------------------------------------------------------------------------
+# 7. default_export_path
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("label", "fmt", "expected"),
+    [
+        ("Cool Server", "json", "cool-server.json"),
+        (f"channel {CHANNEL_ID}", "md", f"channel-{CHANNEL_ID}.md"),
+        ("#general", "md", "general.md"),
+        ("x", "JSON", "x.json"),
+        ("x", "markdown", "x.md"),
+        ("x", "unknown-format", "x.md"),
+        ("", "md", "export.md"),
+        ("", "json", "export.json"),
+        ("###", "md", "export.md"),
+    ],
+)
+def test_default_export_path(label, fmt, expected):
+    assert default_export_path(label, fmt) == expected
