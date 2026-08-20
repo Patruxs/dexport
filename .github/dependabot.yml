@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    labels: ["dependencies"]
+
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "deps"
+    labels: ["dependencies"]
+    # Runtime pins are deliberately loose lower bounds (playwright>=1.40 etc.),
+    # so there is nothing for Dependabot to bump there. What it can usefully
+    # watch is the dev toolchain, whose new releases are what break CI.
+    allow:
+      - dependency-type: all
+    groups:
+      dev-tooling:
+        patterns: ["ruff", "mypy", "pytest", "pytest-cov"]
