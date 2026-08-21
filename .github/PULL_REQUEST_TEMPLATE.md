@@ -10,7 +10,7 @@
 - [ ] Docs updated where they track the code: `README.md` tables,
       `CHANGELOG.md` under `[Unreleased]`, `docs/ARCHITECTURE.md` if a stage changed
 - [ ] No header, token, or account identifier is logged, printed, or persisted
-- [ ] New sub-package under `dexport/`? Added to `packages` in `pyproject.toml`
+- [ ] New sub-package under `src/`? Added to `packages` in `pyproject.toml`
 - [ ] New write verb? Built in `messages.py` and routed through `run_write`
 
 ## Anything reviewers should look at closely

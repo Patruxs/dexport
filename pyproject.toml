@@ -4,11 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dexport"
-version = "0.0.1"
-description = "Drive your own Discord session from the CLI over CDP."
+dynamic = ["version"]
+description = "Drive your own Discord session from the CLI by attaching to the running desktop client over CDP."
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "Patruxs" }]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Patruxs", email = "90237708+Patruxs@users.noreply.github.com" }]
+keywords = ["discord", "cli", "cdp", "playwright", "export"]
+classifiers = [
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Communications :: Chat",
+]
 
 dependencies = [
     "playwright>=1.40",
@@ -28,8 +40,34 @@ dev = [
 [project.scripts]
 dexport = "dexport.cli:app"
 
+[project.urls]
+Homepage = "https://github.com/Patruxs/dexport"
+Repository = "https://github.com/Patruxs/dexport"
+Documentation = "https://github.com/Patruxs/dexport/blob/main/docs/ARCHITECTURE.md"
+Issues = "https://github.com/Patruxs/dexport/issues"
+Changelog = "https://github.com/Patruxs/dexport/blob/main/CHANGELOG.md"
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+
+# The package directory is `src/` but the import name is `dexport`, so the
+# mapping below is what ties the two together. setuptools (unlike hatchling)
+# supports this rewrite in editable installs, which is why it is the backend.
+# `packages` must be listed explicitly: auto-discovery cannot see through the
+# rename. Add a row when you add a sub-package under src/ - the guard is
+# tests/test_docs.py::test_pyproject_lists_every_subpackage.
 [tool.setuptools]
+package-dir = { "dexport" = "src" }
 packages = ["dexport", "dexport.cli", "dexport.launcher"]
+
+[tool.setuptools.dynamic]
+# Single source of truth for the version: src/__init__.py::__version__
+version = { attr = "dexport.__version__" }
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -37,11 +75,16 @@ addopts = "-ra --strict-markers"
 
 [tool.coverage.run]
 branch = true
-source = ["dexport"]
+source = ["src"]
 
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.$",           # Protocol method bodies
+    "pragma: no cover",
+]
 
 # ---------------------------------------------------------------------------
 # Lint / format (ruff)
@@ -62,8 +105,8 @@ select = [
     "SIM",      # simplify
     "C4",       # comprehensions
     "RUF",      # ruff-specific (incl. unused-noqa)
-    "BLE",      # blind except - must be justified with a noqa comment
-    "S",        # bandit - subprocess/urllib use is deliberate; see noqa notes
+    "BLE",      # blind except — must be justified with a noqa comment
+    "S",        # bandit — subprocess/urllib use is deliberate; see noqa notes
 ]
 ignore = [
     "S603",     # subprocess without shell=True is what we want; args are our own
@@ -82,7 +125,7 @@ known-first-party = ["dexport"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["dexport"]
+files = ["src"]
 strict = true
 warn_unreachable = true
 pretty = true

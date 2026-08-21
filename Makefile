@@ -34,7 +34,7 @@ fmt: ## Auto-fix lint issues and format
 	$(PY) -m ruff format .
 
 typecheck: ## Static type-check with mypy
-	$(PY) -m mypy dexport
+	$(PY) -m mypy src
 
 check: lint typecheck test ## Everything CI runs
 
