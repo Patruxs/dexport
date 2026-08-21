@@ -253,3 +253,49 @@ inside `dexport/` resolves to the installed copy, not your working tree.
 | `util.py` | Pure helpers: diacritics stripping, `normalize`, `is_snowflake`, `human_bytes`. |
 
 `python -m dexport` works as well as the `dexport` entry point.
+
+## Development
+
+```bash
+make install    # or: pip install -e ".[dev]"
+make check      # ruff check + ruff format --check + mypy (strict) + pytest
+```
+
+`make check` is exactly what CI runs. The individual targets are `make test`,
+`make lint`, `make fmt` (auto-fix and format) and `make typecheck`; `make help`
+lists them. Every target uses `./.venv` when it exists, so there is nothing to
+activate.
+
+The tests are fully offline. The pure/core logic (normalisation, rate-limiter
+math, emoji encoding, header sanitising, the API retry state machine via a
+fake session) is covered without a running Discord client, and an autouse
+fixture points `DEXPORT_HOME` at a temp dir so your real `~/.dexport` is never
+touched.
+
+To smoke-test against a live client after a change:
+
+```bash
+dexport --restart whoami                                # whole pipeline: launch → attach → snapshot → GET /users/@me
+dexport send --channel-id <channel_id> -m hi --dry-run  # builds and previews a write; contacts nothing
+```
+
+How the pieces fit together — and how to add a command, an export format or
+a config key — is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The
+contribution workflow is in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Contributing & security
+
+Contributions are welcome — open an [issue](https://github.com/Patruxs/dexport/issues)
+or a pull request. Please keep the scope of automation features conservative
+given the ToS caveat above; the workflow and the review checklist are in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+Found a security problem? **Don't open a public issue** — report it privately
+via [GitHub Security Advisories](https://github.com/Patruxs/dexport/security/advisories/new).
+[SECURITY.md](SECURITY.md) also documents exactly what dexport does with your
+session headers, and which sharp edges (the unauthenticated CDP port, most of
+all) are working as intended.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
