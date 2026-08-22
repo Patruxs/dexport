@@ -22,7 +22,7 @@ from dexport.config import ENV_DISCORD_BINARY, ENV_HOME, ENV_PORT, Settings
 
 ROOT = Path(__file__).resolve().parent.parent
 README = ROOT / "README.md"
-PACKAGE = ROOT / "dexport"
+PACKAGE = ROOT / "src"
 
 # Package plumbing that is not a documented "module".
 SKIP_STEMS = {"__init__", "__main__"}
@@ -227,7 +227,7 @@ def test_console_script_entry_point_resolves_to_typer_app():
 
 
 def test_pyproject_lists_every_subpackage():
-    """``dexport/`` is mapped onto the import name ``dexport``, which defeats
+    """``src/`` is mapped onto the import name ``dexport``, which defeats
     setuptools' package auto-discovery — so ``packages`` is hand-written.
     A sub-package missing from that list is silently absent from the wheel.
     """
@@ -238,9 +238,9 @@ def test_pyproject_lists_every_subpackage():
     }
     data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     tool = data["tool"]["setuptools"]
-    assert tool["package-dir"] == {"dexport": "dexport"}
+    assert tool["package-dir"] == {"dexport": "src"}
     declared = set(tool["packages"])
     assert declared == expected, (
-        "pyproject [tool.setuptools].packages is out of sync with dexport/: "
+        "pyproject [tool.setuptools].packages is out of sync with src/: "
         f"missing {sorted(expected - declared)}, stale {sorted(declared - expected)}"
     )

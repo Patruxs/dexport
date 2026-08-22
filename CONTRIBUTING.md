@@ -20,7 +20,7 @@ story is in the [README](README.md).
 | --- | --- |
 | `make test` | `pytest -q` (offline, sub-second) |
 | `make lint` | `ruff check .` + `ruff format --check .` |
-| `make typecheck` | `mypy dexport` (`strict = true`, `warn_unreachable`, config in `pyproject.toml`) |
+| `make typecheck` | `mypy src` (`strict = true`, `warn_unreachable`, config in `pyproject.toml`) |
 | `make check` | lint + typecheck + test - exactly what CI (`.github/workflows/ci.yml`) runs |
 | `make fmt` | `ruff check --fix .` + `ruff format .` - auto-fixes what it can |
 
@@ -76,10 +76,10 @@ Do not edit `conftest.py` for one test's convenience; put helpers in your own te
   resolve names, but must still never execute the request.
 - **The previewed request is the sent request.** Builders in `messages.py` return one `ApiRequest`;
   `preview(req)` and `dx.api.execute(req)` receive the same object.
-- **Modules under `dexport/` import each other relatively** (`from .api import ApiCore`). The directory
-  is `dexport/` but the import name is `dexport` (`package-dir` in `pyproject.toml`), so an absolute
-  `from dexport.x import y` inside `dexport/` picks up the *installed* copy, not your working tree.
-  A new sub-package under `dexport/` must also be added to `packages` in `pyproject.toml`;
+- **Modules under `src/` import each other relatively** (`from .api import ApiCore`). The directory
+  is `src/` but the import name is `dexport` (`package-dir` in `pyproject.toml`), so an absolute
+  `from dexport.x import y` inside `src/` picks up the *installed* copy, not your working tree.
+  A new sub-package under `src/` must also be added to `packages` in `pyproject.toml`;
   `tests/test_docs.py::test_pyproject_lists_every_subpackage` fails if you forget.
 - **`session.py` is the only module that imports Playwright** (lazily, inside `Session.connect`).
   Everything else talks to the `Evaluator` / `RequestWatcher` protocols so it can be faked.
@@ -88,11 +88,11 @@ Do not edit `conftest.py` for one test's convenience; put helpers in your own te
 
 ### Add a write verb (e.g. `pin`)
 
-1. `dexport/messages.py`: add `pin_message_request(channel_id, message_id) -> ApiRequest` next to
+1. `src/messages.py`: add `pin_message_request(channel_id, message_id) -> ApiRequest` next to
    `delete_message_request`. Builders are pure and know the URL layout; nothing else does.
 2. `tests/test_messages.py`: assert the builder's `method`, `path` and `body` (and `body_text()` if
    the body matters). This is the test that guards `--dry-run` output too.
-3. `dexport/cli/write.py`: copy `delete`. Build a `Target(guild, channel, guild_id, channel_id)` and
+3. `src/cli/write.py`: copy `delete`. Build a `Target(guild, channel, guild_id, channel_id)` and
    call `run_write(ctx, target, build=lambda cid: ..., confirm="Pin message ...", done=..., yes=yes,
    dry_run=dry_run)`. Reuse `YesOpt`, `DryRunOpt` and the target option aliases from `cli/common.py`.
 4. README: add the row to the command reference table and an example under "Write"; CHANGELOG entry.
@@ -100,8 +100,8 @@ Do not edit `conftest.py` for one test's convenience; put helpers in your own te
 ### Add a read command
 
 1. If it needs a new endpoint, add a `*_request` builder (and a pager like `fetch_history` if it
-   paginates) in `dexport/messages.py`; guild/channel listing belongs in `resolver.py`.
-2. `dexport/cli/read.py`: `with connect(ctx) as dx:` fetch inside the block, print after it with
+   paginates) in `src/messages.py`; guild/channel listing belongs in `resolver.py`.
+2. `src/cli/read.py`: `with connect(ctx) as dx:` fetch inside the block, print after it with
    `console` (rendering happens after the session is released). Resolve targets with
    `resolve_channel(dx, Target(...))` or `resolve_guild(dx, guild, guild_id)`.
 3. Test the fetch/paging logic against `FakeApi` (`api.queue(200, payload)`, then inspect `api.calls`).
@@ -109,7 +109,7 @@ Do not edit `conftest.py` for one test's convenience; put helpers in your own te
 
 ### Add an export format
 
-1. `dexport/render.py`: write `to_<fmt>(messages, title=None) -> str` using `oldest_first` and the
+1. `src/render.py`: write `to_<fmt>(messages, title=None) -> str` using `oldest_first` and the
    shared helpers (`display_name`, `format_timestamp`, `attachment_lines`, `reaction_summary`).
 2. Register it in `EXPORTERS` (keys are matched lower-case) and `EXPORT_EXTENSIONS`;
    `get_exporter` / `export_to_file` / `default_export_path` pick it up automatically.
@@ -118,7 +118,7 @@ Do not edit `conftest.py` for one test's convenience; put helpers in your own te
 
 ### Add a config key
 
-1. `dexport/config.py`: add a field with a default to `Settings` and a `_coerce(...)` line in
+1. `src/config.py`: add a field with a default to `Settings` and a `_coerce(...)` line in
    `Settings.from_dict`. Field name == JSON key, so choose it carefully; it is permanent.
 2. Env var: add an `ENV_*` constant and a branch in `Settings.with_env_overrides`.
 3. CLI flag (only if it is a connection-level option): add it to `Settings.with_overrides`,

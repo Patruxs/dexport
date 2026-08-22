@@ -215,25 +215,25 @@ The exact limiter and retry rules are spelled out in
 
 ## Project layout
 
-The package lives in `dexport/` and is imported as `dexport`:
+The package lives in `src/` and is imported as `dexport`:
 
 ```
 .                     # repo root
 ├── pyproject.toml    # name = "dexport", entry point, tool config
 ├── tests/  docs/  Makefile  README.md
-└── dexport/              # the package — imported as `dexport`, modules below
+└── src/              # the package — imported as `dexport`, modules below
     ├── api.py  session.py  ...
     ├── cli/
     └── launcher/
 ```
 
 `pyproject.toml` maps the directory onto the import name with
-`package-dir = { "dexport" = "dexport" }`, so `import dexport` and the built wheel
+`package-dir = { "dexport" = "src" }`, so `import dexport` and the built wheel
 (which ships a normal `dexport/` package) are unaffected. Two consequences for
 contributors: `packages` in `pyproject.toml` is hand-maintained because
 auto-discovery cannot see through the rename, and modules must use **relative**
 imports (`from .api import ApiCore`) — an absolute `from dexport.api import ...`
-inside `dexport/` resolves to the installed copy, not your working tree.
+inside `src/` resolves to the installed copy, not your working tree.
 
 | Module | Responsibility |
 | --- | --- |

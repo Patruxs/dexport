@@ -25,6 +25,6 @@ jobs:
           ruff check .
           ruff format --check .
       - name: Type-check
-        run: mypy dexport
+        run: mypy src
       - name: Test
         run: pytest -q
