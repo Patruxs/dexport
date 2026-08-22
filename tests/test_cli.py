@@ -701,3 +701,41 @@ def test_port_precedence_flag_env_file_default(
 )
 def test_default_export_path(label, fmt, expected):
     assert default_export_path(label, fmt) == expected
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="runs of separators are not collapsed: currently yields 'my-server--general.md'",
+)
+def test_default_export_path_collapses_separator_runs():
+    assert default_export_path("My Server #general", "md") == "my-server-general.md"
+
+
+# --------------------------------------------------------------------------
+# 8. Terms-of-Service notice
+# --------------------------------------------------------------------------
+
+
+def test_tos_notice_is_shown_once_and_leaves_a_marker(dexport_home, capsys):
+    warn_tos_once()
+    first = capsys.readouterr().err
+    assert "Terms of Service" in first
+    assert (dexport_home / "notice-shown").exists()
+
+    warn_tos_once()
+    assert capsys.readouterr().err == ""
+
+
+def test_tos_notice_survives_an_unwritable_home(tmp_path, capsys):
+    unwritable = Paths(home=tmp_path / "file-not-a-dir" / "home")
+    (tmp_path / "file-not-a-dir").write_text("", encoding="utf-8")
+
+    warn_tos_once(unwritable)  # must not raise
+
+    assert "Terms of Service" in capsys.readouterr().err
+
+
+def test_root_help_carries_the_self_bot_warning():
+    result = CliRunner().invoke(app, ["--help"], env=PLAIN_ENV)
+    assert result.exit_code == 0
+    assert "Terms of" in result.output
