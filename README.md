@@ -282,3 +282,20 @@ dexport send --channel-id <channel_id> -m hi --dry-run  # builds and previews a 
 How the pieces fit together — and how to add a command, an export format or
 a config key — is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The
 contribution workflow is in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Contributing & security
+
+Contributions are welcome — open an [issue](https://github.com/Patruxs/dexport/issues)
+or a pull request. Please keep the scope of automation features conservative
+given the ToS caveat above; the workflow and the review checklist are in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+Found a security problem? **Don't open a public issue** — report it privately
+via [GitHub Security Advisories](https://github.com/Patruxs/dexport/security/advisories/new).
+[SECURITY.md](SECURITY.md) also documents exactly what dexport does with your
+session headers, and which sharp edges (the unauthenticated CDP port, most of
+all) are working as intended.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
