@@ -9,4 +9,4 @@ without dexport having to reconstruct the build-specific header cluster.
 The public entry point is the Typer app in :mod:`dexport.cli`.
 """
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
