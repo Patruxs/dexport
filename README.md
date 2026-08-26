@@ -39,6 +39,7 @@ own client.
 - [How it works](#how-it-works)
 - [Requirements](#requirements)
 - [Install](#install)
+- [Updating](#updating)
 - [First run](#first-run)
 - [Usage](#usage)
 - [Configuration](#configuration)
@@ -87,6 +88,27 @@ pipx install .
 # or, for development (editable):
 pip install -e ".[dev]"
 ```
+
+`pipx` itself comes from `pip install --user pipx`; run `pipx ensurepath` once
+afterwards so the installed `dexport` command is on your `PATH`. Plain
+`pip install git+https://github.com/Patruxs/dexport` works too — pipx is only
+recommended because it keeps dexport and its dependencies in their own venv.
+
+## Updating
+
+```bash
+pipx upgrade dexport                                           # released versions
+pipx install --force git+https://github.com/Patruxs/dexport    # any commit on main
+```
+
+`pipx upgrade` compares *version numbers*, so it moves you from one release to
+the next but reports `already at latest version` for commits pushed since — the
+`--force` form (or `pipx reinstall dexport`) re-fetches the repository and is
+the one to use when you want the current `main`.
+
+Development installs need no reinstall: `git pull` is enough, because
+`pip install -e` points at your working tree. Re-run `pip install -e ".[dev]"`
+only when the dependencies or the `packages` list in `pyproject.toml` change.
 
 ## First run
 
