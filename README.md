@@ -23,13 +23,22 @@ means every call is well-formed and your login keeps working. Nothing is
 forged and no header is invented — they are your own client's, sent from your
 own client.
 
-> [!WARNING]
+> [!CAUTION]
+> **Using this tool can get your Discord account permanently deleted.**
 > Automating a **user** account (a "self-bot") is against Discord's Terms of
-> Service, and the penalty is account termination — permanent. This tool is
-> meant for personal, low-volume use on your own account and data — e.g.
-> exporting your own DM/channel history, or scripting the occasional message.
-> It deliberately paces itself and respects rate limits, but that does not
-> make automation allowed. Use at your own risk.
+> Service, and the stated penalty is account termination — permanent, with no
+> practical appeal, and Discord's one-account-per-person rule means you are
+> not supposed to simply make a new one. dexport paces itself and respects
+> rate limits, but pacing is not permission: a well-behaved self-bot is still
+> a self-bot. There is no safe amount of this; there is only less risk and
+> more risk.
+>
+> This tool is meant for personal, low-volume use on **your own** account and
+> data — e.g. exporting your own DM history, or scripting the occasional
+> message. Read [What you're risking](#what-youre-risking) before you run it.
+> Everything you do with dexport, you do at your own risk; the MIT licence
+> means there is no warranty and no liability, and the author cannot recover a
+> terminated account for you.
 >
 > dexport prints this warning once, the first time it drives your account, and
 > keeps a short version in `dexport --help`.
@@ -37,6 +46,7 @@ own client.
 ## Contents
 
 - [How it works](#how-it-works)
+- [What you're risking](#what-youre-risking)
 - [Requirements](#requirements)
 - [Install](#install)
 - [Updating](#updating)
@@ -66,6 +76,90 @@ memory for the duration of a single command. `~/.dexport/` holds just
 `notice-shown` (the marker for the one-time warning above) — never credentials
 or headers. The full account of what dexport does with your session is in
 [SECURITY.md](SECURITY.md).
+
+## What you're risking
+
+Short version: an irreversible account loss, a locally exposed Discord
+session, and irreversible writes to other people's conversations. In detail:
+
+### 1. Your account — the big one
+
+- **Permanent termination.** Self-botting is enforced as a terms violation,
+  not a warning-first offence. If it happens you lose the account itself and
+  everything attached to it: DM history, friends, Nitro time you paid for,
+  purchased games and cosmetics, and any server you own (a deleted owner
+  account can take the server with it or leave it stranded).
+- **You cannot buy your way back.** Nitro does not protect an account, and a
+  terminated account is not restored on request. Ban appeals for self-botting
+  are rarely granted.
+- **Softer punishments happen first, sometimes.** A flagged session can be
+  invalidated (you get logged out everywhere), locked behind a phone/CAPTCHA
+  verification, or temporarily blocked from the API. Treat any of these as the
+  warning shot it is — stop, don't retry harder.
+- **dexport does not hide you and does not try to.** The header snapshot
+  exists so requests stay *well-formed* as the Discord client build changes —
+  it is a correctness measure, not an evasion measure. Nothing in this tool
+  claims or attempts to make automation undetectable, and no rate limit
+  setting makes automated use permitted.
+- **Risk scales with what you do.** Reading your own DM history once is at one
+  end; unattended loops, cron jobs, mass deletion, bulk reacting, scraping
+  servers you don't own, or anything that resembles a bot service, are at the
+  other. Do not run dexport on an account you cannot afford to lose.
+
+### 2. Your machine — the debug port
+
+- dexport needs Discord running with `--remote-debugging-port`. **That port is
+  unauthenticated by design.** While it is open, any process on your machine
+  that can reach `127.0.0.1:<port>` gets full control of the Discord renderer:
+  it can read your messages, send messages as you, and read your session
+  token. This is a property of the Chrome DevTools Protocol, not a dexport
+  bug.
+- Never forward, tunnel, or expose that port (no `ssh -R`, no `0.0.0.0`
+  binding, no container port publishing). Don't use dexport on a shared or
+  untrusted machine, or one you don't administer.
+- The port stays open for as long as that Discord process lives — not just
+  while a dexport command runs. **Quit and reopen Discord normally when you're
+  done** if you want it closed.
+- `--restart` kills the running Discord client (SIGTERM, then SIGKILL). Any
+  unsent message draft is lost and you drop out of a voice/video call.
+
+### 3. Your conversations — writes are real and irreversible
+
+- `send`, `reply`, `react`, `edit` and `delete` hit the live Discord API.
+  Nothing is sandboxed. A deleted message is gone, an edit is visible to
+  everyone as "(edited)", and other people (and their notifications) see
+  everything instantly.
+- Channel names are matched **fuzzily**, so a typo can resolve to a channel
+  you did not mean — a message meant for a private server can land in a public
+  one. Preview with `--dry-run` first, and use `--channel-id` in scripts:
+  with an explicit ID the fuzzy resolver is not consulted at all.
+- `--yes` removes the confirmation prompt and the last thing standing between
+  a wrong flag and a public mistake. Don't use it in loops you aren't watching.
+
+### 4. Other people's data — exports are not yours to spread
+
+- An export of a channel contains other members' messages, names and IDs. In
+  many jurisdictions that makes you responsible for how it is stored and
+  shared, and most servers' rules forbid republishing their content. Exporting
+  a server you don't own can get you banned from that server even if Discord
+  itself never notices.
+- Export files land in plain text where you point `-o`; treat them like any
+  other dump of private conversation. dexport itself stores no credentials
+  (see [SECURITY.md](SECURITY.md)), but it will happily write a channel's
+  entire history to a file you then forget about.
+
+### Using it with the least risk
+
+- Your own account, your own DMs and servers; ask before exporting anyone
+  else's.
+- Low volume, attended runs. No cron, no unattended loops, no bulk
+  delete/react sweeps.
+- Leave `floor_delay_min` / `floor_delay_max` at their defaults or raise them;
+  never lower them.
+- `--dry-run` before any write, `--channel-id` in anything scripted.
+- Close the debug port when you're done: quit Discord and reopen it normally.
+- If Discord logs you out, shows a CAPTCHA, or starts returning `429`s —
+  stop for the day rather than retrying.
 
 ## Requirements
 
