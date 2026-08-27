@@ -96,7 +96,7 @@ Electron process.
 
 ```bash
 pipx install git+https://github.com/Patruxs/dexport   # or: pip install -e ".[dev]"
-dexport install-agent                                 # optional: adds /dexport
+dexport install-agent                                 # optional: teaches your coding agent
 ```
 
 To update, use `pipx install --force git+...`: plain `pipx upgrade` only
@@ -115,10 +115,10 @@ installing:
 dexport install-agent
 ```
 
-That writes a `/dexport` slash command into every coding agent it finds on your
-machine — Claude Code, Codex CLI, Cursor, Gemini CLI, opencode, pi — each in that
-tool's own format and location. Restart the agent if it was open, and then you
-just talk to it in plain language. Sample prompts:
+That teaches every coding agent it finds on your machine — Claude Code, Codex
+CLI, Cursor, Gemini CLI, opencode, pi — how to use dexport, each in that tool's
+own format and location. Restart the agent if it was open, and then you just
+talk to it in plain language. Sample prompts:
 
 ```
 what did I miss in #general today?
@@ -126,28 +126,28 @@ summarise #team this week — who is waiting on a reply from me?
 did Mai reply yesterday? draft an answer, I'll send it
 ```
 
-Typing `/dexport` first is optional — it just forces the command. Asking in
-your own words is enough; the agent picks dexport up on its own. The one thing
-it can't do without is the Discord desktop client: keep it open and logged in
-while the agent works, otherwise every command fails.
+There is nothing to type first — asking in your own words is enough, the agent
+picks dexport up on its own. The one thing it can't do without is the Discord
+desktop client: keep it open and logged in while the agent works, otherwise
+every command fails.
 
-You never look up an ID: the command teaches the agent to find the channel
-itself with `dexport guilds` / `dexport channels`, export it to JSON, and
-answer from that file.
+You never look up an ID either: the instructions teach the agent to find the
+channel itself with `dexport guilds` / `dexport channels`, export it to JSON,
+and answer from that file.
 
 | Flag | |
 | --- | --- |
 | `--target claude` | Install for specific agents instead of the detected ones; repeatable. |
 | `--project` | Write into `./` (this repo) instead of your home directory. |
-| `--force` | Overwrite a `/dexport` that is already there. |
+| `--force` | Overwrite instructions that are already there. |
 | `--print` | Print the text instead of installing, for any tool not on the list: `dexport install-agent --print > ~/.wherever/dexport.md`. |
 
 > [!CAUTION]
-> The installed command is read-only *by construction* — it allows `guilds`,
-> `channels` and `export`, and tells the agent never to send, reply, react,
-> edit or delete. Keep it that way. Everything an agent reads was written by
-> other people, so one that can read *and* write can be steered by anyone in
-> the channel; a polite instruction is not a control, the allowlist is. And
+> The installed instructions are read-only *by construction* — they allow
+> `guilds`, `channels` and `export`, and tell the agent never to send, reply,
+> react, edit or delete. Keep them that way. Everything an agent reads was
+> written by other people, so one that can read *and* write can be steered by
+> anyone in the channel; a polite instruction is not a control, the allowlist is. And
 > don't leave an agent polling on a timer — a bot service running on a user
 > account is precisely what gets accounts terminated.
 
@@ -200,7 +200,7 @@ what you want in scripts.
 | `edit` | Edit one of your own messages. |
 | `delete` | Delete a message. |
 | `configure` | View or update `~/.dexport/config.json`. |
-| `install-agent` | Write the `/dexport` slash command for your coding agent(s). |
+| `install-agent` | Teach your coding agent(s) how to read Discord with dexport. |
 
 `dexport <command> --help` has the full option list of any command.
 
@@ -246,7 +246,7 @@ relative imports.
 | `config.py` | `Settings` ↔ `config.json`, the resolver cache file, `DEXPORT_HOME` paths. |
 | `models.py` | `ChannelType`, `MESSAGE_CHANNEL_TYPES`, the `GuildRef`/`ChannelRef` cache shapes. |
 | `errors.py` | The `DexportError` hierarchy the CLI turns into one-line errors. |
-| `agents.py` | The `/dexport` slash command: one prompt, rendered per agent tool. |
+| `agents.py` | The coding-agent instructions: one prompt, rendered per agent tool. |
 | `util.py` | Pure helpers: diacritics stripping, `normalize`, `is_snowflake`, `human_bytes`. |
 
 ## Development
