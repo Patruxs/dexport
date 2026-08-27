@@ -19,10 +19,11 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypedDict
+from urllib.parse import urlsplit, urlunsplit
 
 from .errors import ApiError, RateLimitError, SessionError, extract_message
 from .ratelimit import RateLimiter, route_key
-from .session import Evaluator
+from .session import Evaluator, is_discord_url
 
 DISCORD_API_BASE = "https://discord.com/api/v9"
 
@@ -85,6 +86,29 @@ def build_url(path: str) -> str:
     return DISCORD_API_BASE + path
 
 
+def rebase_url(url: str, origin: str) -> str:
+    """Move ``url`` onto ``origin`` when the client is on another Discord host.
+
+    :data:`DISCORD_API_BASE` is the canonical, user-facing URL — it is what
+    ``--dry-run`` prints and what the builders in :mod:`dexport.messages`
+    produce. But the request is executed by an in-page ``fetch``, and some
+    installs serve the client from the legacy ``discordapp.com`` host instead
+    of ``discord.com``. Firing at ``discord.com`` from such a renderer is a
+    cross-origin request, gets no CORS grant, and fails as
+    ``TypeError: Failed to fetch`` before it ever reaches Discord.
+
+    Only Discord URLs are moved, and only onto another Discord host, so an
+    explicit absolute ``path`` still goes exactly where it says.
+    """
+    if not origin or not is_discord_url(url) or not is_discord_url(origin):
+        return url
+    target = urlsplit(origin)
+    parts = urlsplit(url)
+    if parts.netloc == target.netloc:
+        return url
+    return urlunsplit((target.scheme, target.netloc, parts.path, parts.query, parts.fragment))
+
+
 @dataclass(frozen=True)
 class ApiRequest:
     """One Discord API call, described but not yet sent.
@@ -140,12 +164,16 @@ class ApiCore:
         headers: dict[str, str],
         limiter: RateLimiter | None = None,
         *,
+        origin: str = "",
         header_refresh: Callable[[], dict[str, str]] | None = None,
         max_retries: int = 5,
     ) -> None:
         self.session = session
         self.headers = dict(headers)
         self.limiter = limiter or RateLimiter()
+        #: Origin the in-page ``fetch`` runs on; see :func:`rebase_url`. Empty
+        #: means "send URLs untouched" (what every test and ad-hoc use wants).
+        self.origin = origin
         self._header_refresh = header_refresh
         self.max_retries = max_retries
         self._reauthed = False
@@ -175,7 +203,7 @@ class ApiCore:
         raised as :class:`ApiError`; pass ``False`` to inspect it yourself.
         """
         method = req.method.upper()
-        url = req.url
+        url = rebase_url(req.url, self.origin)
         key = route_key(method, req.path)
         body_str = req.body_text()
 
@@ -199,7 +227,7 @@ class ApiCore:
                 if net_tries <= self.max_retries:
                     self.limiter.sleeper(_backoff(net_tries))
                     continue
-                raise ApiError(0, None, f"fetch failed in renderer: {raw['error']}")
+                raise ApiError(0, None, _renderer_failure(raw["error"], url))
 
             resp = ApiResponse(
                 status=int(raw["status"]),
@@ -255,6 +283,21 @@ class ApiCore:
     def me(self) -> dict[str, Any]:
         me: dict[str, Any] = self.get_json("/users/@me")
         return me
+
+
+def _renderer_failure(error: str | None, url: str) -> str:
+    """Message for a ``fetch`` that never left the renderer.
+
+    Status 0 means the browser refused or dropped the request, so the usual
+    suspects are the page rather than Discord: not signed in, still on a
+    loading/error screen, or offline.
+    """
+    return (
+        f"fetch failed in renderer: {error}\n"
+        f"Tried: {url}\n"
+        "Check that the Discord client is signed in, has a channel open, and "
+        "is not stuck on a loading or error screen, then retry."
+    )
 
 
 def _api_error(resp: ApiResponse, refresh_error: Exception | None = None) -> ApiError:

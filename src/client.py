@@ -69,6 +69,9 @@ class Dexport:
                 session,
                 headers,
                 limiter,
+                # The in-page fetch must be same-origin with the app page; see
+                # api.rebase_url. Read after capture_headers, which reloads.
+                origin=session.origin,
                 header_refresh=lambda: capture_headers(session),
             )
             resolver = Resolver(api, load_cache(paths))

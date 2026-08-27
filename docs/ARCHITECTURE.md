@@ -78,7 +78,13 @@ rejects — to a `FetchResult`:
 | `error` | str or `null` | `String(e)` of a thrown `fetch`, else `null` |
 
 Because the request is same-origin there is no CORS and every response header
-is readable, including `X-RateLimit-*`. `_check_fetch_result` verifies that the
+is readable, including `X-RateLimit-*`. Staying same-origin is not automatic:
+some installs serve the client from the legacy `discordapp.com` host rather
+than `discord.com`, so `ApiCore` is given the app page's own origin
+(`Session.origin`) and `rebase_url` moves each URL onto it before the fetch.
+Skipping that step makes every call cross-origin and it fails as
+`TypeError: Failed to fetch` without ever reaching Discord.
+`_check_fetch_result` verifies that the
 reply is a dict containing all four keys and raises `SessionError` immediately
 otherwise: a broken JS↔Python contract must fail fast rather than look like a
 flaky network, which would be retried with backoff for about half a minute.
@@ -127,7 +133,9 @@ executing.
 call that has not been sent. `.url` prefixes `DISCORD_API_BASE`
 (`https://discord.com/api/v9`; absolute URLs pass through) and `.body_text()`
 is the exact wire body: `None`, a `str` as-is, or `json.dumps(body,
-ensure_ascii=False)`.
+ensure_ascii=False)`. `.url` is the canonical form — it is what `--dry-run`
+prints; `ApiCore.execute` rebases it onto the live page origin only at send
+time.
 
 The builders in `messages.py` (`send_message_request`, `edit_message_request`,
 `delete_message_request`, `add_reaction_request`, `remove_reaction_request`,

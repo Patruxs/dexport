@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Protocol, Self
+from urllib.parse import urlsplit
 
 from .errors import SessionError
 
@@ -128,6 +129,26 @@ class Session:
         return cls(pw, browser, page)
 
     # -- primitives ---------------------------------------------------------
+    @property
+    def origin(self) -> str:
+        """Scheme + host of the app page, e.g. ``https://discord.com``.
+
+        The in-page ``fetch`` runs on this origin, so it is what
+        :class:`~dexport.api.ApiCore` must aim its requests at. Not always
+        ``discord.com``: some installs are still served from the legacy
+        ``discordapp.com`` host, and a request from there to ``discord.com``
+        is cross-origin and dies as ``TypeError: Failed to fetch``.
+
+        Empty string if the URL is unusable (page closing, ``about:blank``).
+        """
+        try:
+            parts = urlsplit(self._page.url)
+        except Exception:  # noqa: BLE001 - page may be closing
+            return ""
+        if not parts.scheme or not parts.netloc:
+            return ""
+        return f"{parts.scheme}://{parts.netloc}"
+
     def evaluate(self, expression: str, arg: Any = None) -> Any:
         """Run ``expression`` (a JS function or expression) in the page."""
         try:

@@ -79,12 +79,14 @@ class FakePage:
     def __init__(
         self,
         *,
+        url: str = "https://discord.com/channels/@me",
         requests: list[FakeRequest] | None = None,
         evaluate_result: Any = None,
         evaluate_error: Exception | None = None,
         reload_error: Exception | None = None,
         expect_request_error: Exception | None = None,
     ) -> None:
+        self.url = url
         self.requests = list(requests or [])
         self._evaluate_result = evaluate_result
         self._evaluate_error = evaluate_error
@@ -463,3 +465,28 @@ def test_connect_without_app_page_releases_everything_and_raises(fake_playwright
         Session.connect("http://127.0.0.1:9222")
     assert browser.closed
     assert pw.stopped
+
+
+# --------------------------------------------------------------------------
+# Session.origin
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://discord.com/channels/1/2", "https://discord.com"),
+        # The legacy host, which is what makes this property necessary at all:
+        # api.rebase_url uses it to keep the in-page fetch same-origin.
+        ("https://discordapp.com/channels/@me", "https://discordapp.com"),
+        ("https://canary.discord.com/app", "https://canary.discord.com"),
+        ("about:blank", ""),
+        ("", ""),
+    ],
+)
+def test_origin_is_the_app_page_scheme_and_host(url, expected):
+    assert Session(None, None, FakePage(url=url)).origin == expected
+
+
+def test_origin_is_empty_when_the_page_is_closing():
+    assert Session(None, None, _ClosingPage()).origin == ""

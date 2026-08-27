@@ -22,10 +22,11 @@ CACHE = {"guilds": [{"id": "1", "name": "cú đêm"}], "channels": {}}
 
 
 class FakeClientSession(FakeSession):
-    """conftest's fetch-faking session plus the ``close()`` the client relies on."""
+    """conftest's fetch-faking session plus the ``close()``/``origin`` the client relies on."""
 
-    def __init__(self, responses=()):
+    def __init__(self, responses=(), origin="https://discord.com"):
         super().__init__(responses)
+        self.origin = origin
         self.closed = False
 
     def close(self) -> None:
@@ -112,6 +113,13 @@ def test_acquire_gives_api_the_captured_headers(pipeline):
     dx = Dexport.acquire(settings=_settings())
     assert dx.api.headers == {"authorization": "tok", "x-super-properties": "abc"}
     assert dx.api.session is pipeline.session
+
+
+def test_acquire_gives_api_the_page_origin(pipeline):
+    """The in-page fetch must stay same-origin with the client; see api.rebase_url."""
+    pipeline.session = FakeClientSession(origin="https://discordapp.com")
+    dx = Dexport.acquire(settings=_settings())
+    assert dx.api.origin == "https://discordapp.com"
 
 
 def test_acquire_configures_limiter_floor_from_settings(pipeline):

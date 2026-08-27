@@ -11,7 +11,7 @@ import pytest
 from conftest import FakeSession
 from conftest import resp as _resp
 
-from dexport.api import ApiCore, ApiRequest, ApiResponse, build_url
+from dexport.api import ApiCore, ApiRequest, ApiResponse, build_url, rebase_url
 from dexport.errors import ApiError, HeaderCaptureError, RateLimitError, SessionError
 from dexport.ratelimit import RateLimiter
 
@@ -144,6 +144,70 @@ def test_response_headers_are_lowercased():
 )
 def test_build_url(path, expected):
     assert build_url(path) == expected
+
+
+# --------------------------------------------------------------------------
+# Same-origin rebasing (api.rebase_url)
+# --------------------------------------------------------------------------
+
+_API = "https://discord.com/api/v9/channels/1/messages?limit=5"
+
+
+@pytest.mark.parametrize(
+    ("url", "origin", "expected"),
+    [
+        # The legacy host: the bug this exists for. A fetch issued from a
+        # discordapp.com renderer to discord.com is cross-origin and dies as
+        # "TypeError: Failed to fetch".
+        (
+            _API,
+            "https://discordapp.com",
+            "https://discordapp.com/api/v9/channels/1/messages?limit=5",
+        ),
+        (
+            _API,
+            "https://canary.discord.com",
+            "https://canary.discord.com/api/v9/channels/1/messages?limit=5",
+        ),
+        # Already same-origin, or nothing to go on: untouched.
+        (_API, "https://discord.com", _API),
+        (_API, "", _API),
+        # Never move a URL onto a non-Discord origin, or a non-Discord URL.
+        (_API, "https://evil.example", _API),
+        (
+            "https://cdn.discordapp.com/a.png",
+            "https://discordapp.com",
+            "https://discordapp.com/a.png",
+        ),
+        ("http://localhost:9222/json", "https://discordapp.com", "http://localhost:9222/json"),
+    ],
+)
+def test_rebase_url(url, origin, expected):
+    assert rebase_url(url, origin) == expected
+
+
+def test_execute_fetches_from_the_page_origin():
+    """The URL handed to the renderer follows the client's own host."""
+    session = FakeSession([_resp(200, "{}")])
+    api = ApiCore(session, {}, _no_sleep_limiter(), origin="https://discordapp.com")
+    api.get_json("/users/@me")
+    assert session.calls[0]["url"] == "https://discordapp.com/api/v9/users/@me"
+
+
+def test_execute_leaves_the_url_alone_without_an_origin():
+    session = FakeSession([_resp(200, "{}")])
+    api = ApiCore(session, {}, _no_sleep_limiter())
+    api.get_json("/users/@me")
+    assert session.calls[0]["url"] == "https://discord.com/api/v9/users/@me"
+
+
+def test_renderer_failure_names_the_url_it_tried():
+    session = FakeSession([_resp(0, "", {}, error="TypeError: Failed to fetch")] * 6)
+    api = ApiCore(session, {}, _no_sleep_limiter(), origin="https://discordapp.com")
+    with pytest.raises(ApiError) as excinfo:
+        api.get_json("/users/@me")
+    assert "https://discordapp.com/api/v9/users/@me" in str(excinfo.value)
+    assert "signed in" in str(excinfo.value)
 
 
 # --------------------------------------------------------------------------
