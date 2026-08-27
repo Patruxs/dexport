@@ -174,7 +174,7 @@ dexport install-agent
 ```
 
 That writes a `/dexport` slash command into every coding agent it finds on your
-machine — Claude Code, Codex CLI, Cursor, Gemini CLI, opencode — each in that
+machine — Claude Code, Codex CLI, Cursor, Gemini CLI, opencode, pi — each in that
 tool's own format and location. Restart the agent if it was open, and then you
 just talk to it:
 

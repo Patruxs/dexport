@@ -71,6 +71,13 @@ def test_gemini_render_is_valid_toml():
     assert "{{args}}" in data["prompt"]
 
 
+def test_pi_frontmatter_carries_the_argument_hint():
+    """pi shows argument-hint in its /-autocomplete, so it must be there."""
+    head = agents.render(agents.TARGETS_BY_KEY["pi"]).split("---")[1]
+    assert f"description: {agents.DESCRIPTION}" in head
+    assert f"argument-hint: {agents.ARGUMENT_HINT}" in head
+
+
 # --------------------------------------------------------------------------
 # Placement
 # --------------------------------------------------------------------------
@@ -85,6 +92,14 @@ def test_target_path_project_scope(tmp_path):
     claude = agents.TARGETS_BY_KEY["claude"]
     path = agents.target_path(claude, home=tmp_path, root=tmp_path / "proj")
     assert path == tmp_path / "proj/.claude/commands/dexport.md"
+
+
+def test_pi_user_and_project_scopes_are_different_suffixes(tmp_path):
+    """Global prompts live under ~/.pi/agent, project ones under a bare .pi/."""
+    pi = agents.TARGETS_BY_KEY["pi"]
+    assert agents.target_path(pi, home=tmp_path) == tmp_path / ".pi/agent/prompts/dexport.md"
+    root = tmp_path / "proj"
+    assert agents.target_path(pi, home=tmp_path, root=root) == root / ".pi/prompts/dexport.md"
 
 
 def test_target_path_is_none_when_the_agent_has_no_project_scope(tmp_path):

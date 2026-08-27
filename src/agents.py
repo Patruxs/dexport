@@ -61,6 +61,12 @@ def _frontmatter_md(request: str) -> str:
     return f"---\ndescription: {DESCRIPTION}\n---\n\n" + _body(request)
 
 
+def _hinted_md(request: str) -> str:
+    return (f"---\ndescription: {DESCRIPTION}\nargument-hint: {ARGUMENT_HINT}\n---\n\n") + _body(
+        request
+    )
+
+
 def _plain_md(request: str) -> str:
     return _body(request)
 
@@ -131,6 +137,18 @@ TARGETS: tuple[AgentTarget, ...] = (
         project_path=".opencode/command/dexport.md",
         argument_slot="$ARGUMENTS",
         render=_frontmatter_md,
+    ),
+    AgentTarget(
+        key="pi",
+        label="pi",
+        marker=".pi",
+        # pi keeps its global config under ``~/.pi/agent`` but reads project
+        # resources from a bare ``.pi/`` at the repo root, so the two scopes
+        # are not the same suffix.
+        user_path=".pi/agent/prompts/dexport.md",
+        project_path=".pi/prompts/dexport.md",
+        argument_slot="$ARGUMENTS",
+        render=_hinted_md,
     ),
 )
 
