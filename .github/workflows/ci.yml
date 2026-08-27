@@ -28,3 +28,27 @@ jobs:
         run: mypy src
       - name: Test
         run: pytest -q
+
+  npm-wrapper:
+    # The npm package ships the Python sources and pip-installs them at install
+    # time; this proves the whole path still works, not just that it parses.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Pack and install globally
+        run: |
+          npm pack
+          npm install -g --foreground-scripts ./dexport-*.tgz
+        shell: bash
+      - name: Smoke-test the wrapper
+        run: dexport --version

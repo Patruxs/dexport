@@ -89,19 +89,33 @@ logs you out or starts returning `429`s.
 
 ## Install
 
-Requires Python 3.11+ and the Discord desktop client (Windows, macOS, Linux
-including Flatpak; PTB/Canary are detected on Linux) installed and logged in.
+Requires Python 3.11+ (plus Node 18+ if you install with npm) and the Discord
+desktop client (Windows, macOS, Linux including Flatpak; PTB/Canary are
+detected on Linux) installed and logged in.
 You do **not** need `playwright install` — dexport attaches to Discord's own
 Electron process.
 
 ```bash
-pipx install git+https://github.com/Patruxs/dexport   # or: pip install -e ".[dev]"
-dexport install-agent                                 # optional: teaches your coding agent
+npm install -g dexport   # or: npm install -g github:Patruxs/dexport
+dexport install-agent    # optional: teaches your coding agent
 ```
 
-To update, use `pipx install --force git+...`: plain `pipx upgrade` only
-compares version numbers, so it won't pick up new commits on `main`. Editable
-installs just need `git pull`.
+npm only carries the program — dexport itself is Python. The install step
+builds a private virtualenv inside the package and pip-installs dexport into
+it, so nothing lands in your system Python and `npm uninstall -g dexport`
+takes the whole thing with it. If Python is not on `PATH` under `python3` /
+`python` / `py -3`, point `DEXPORT_PYTHON` at the interpreter to use. Update
+with `npm install -g dexport@latest`.
+
+Python tooling works too, and is the better fit if you already live in it:
+
+```bash
+pipx install git+https://github.com/Patruxs/dexport   # or: pip install -e ".[dev]"
+```
+
+To update a pipx install, use `pipx install --force git+...`: plain `pipx
+upgrade` only compares version numbers, so it won't pick up new commits on
+`main`. Editable installs just need `git pull`.
 
 
 ## Usage
@@ -251,6 +265,11 @@ relative imports.
 | `errors.py` | The `DexportError` hierarchy the CLI turns into one-line errors. |
 | `agents.py` | The coding-agent instructions: one prompt, rendered per agent tool. |
 | `util.py` | Pure helpers: diacritics stripping, `normalize`, `is_snowflake`, `human_bytes`. |
+
+Outside `src/` there is one more piece: `npm/` holds the wrapper that makes
+`npm install -g dexport` work. `bootstrap.js` builds the private virtualenv,
+`postinstall.js` runs it at install time, and `cli.js` is the `dexport`
+command on your `PATH`. No program logic lives there.
 
 ## Development
 

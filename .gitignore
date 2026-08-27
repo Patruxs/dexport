@@ -20,3 +20,8 @@ htmlcov/
 *.swp
 
 .DS_Store
+
+# npm wrapper: private virtualenv built by npm/bootstrap.js
+.dexport-venv/
+node_modules/
+*.tgz

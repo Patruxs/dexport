@@ -1,0 +1,41 @@
+{
+  "name": "dexport",
+  "version": "0.1.0",
+  "description": "Drive your own Discord session from the CLI by attaching to the running desktop client over CDP.",
+  "keywords": [
+    "discord",
+    "cli",
+    "cdp",
+    "playwright",
+    "export"
+  ],
+  "homepage": "https://github.com/Patruxs/dexport#readme",
+  "bugs": "https://github.com/Patruxs/dexport/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Patruxs/dexport.git"
+  },
+  "license": "MIT",
+  "author": "Patruxs",
+  "type": "commonjs",
+  "bin": {
+    "dexport": "npm/cli.js"
+  },
+  "scripts": {
+    "postinstall": "node npm/postinstall.js"
+  },
+  "files": [
+    "npm/",
+    "src/",
+    "!src/**/__pycache__/**",
+    "pyproject.toml"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ]
+}

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -17,6 +18,7 @@ from pathlib import Path
 import pytest
 import typer
 
+import dexport
 from dexport.cli import app
 from dexport.config import ENV_DISCORD_BINARY, ENV_HOME, ENV_PORT, Settings
 
@@ -244,3 +246,18 @@ def test_pyproject_lists_every_subpackage():
         "pyproject [tool.setuptools].packages is out of sync with src/: "
         f"missing {sorted(expected - declared)}, stale {sorted(declared - expected)}"
     )
+
+
+def test_package_json_tracks_the_python_package():
+    """The npm wrapper is only a shell around the Python package: it ships the
+    sources and pip-installs them at install time. A stale version string makes
+    the wrapper's stamp file lie about what the venv holds, and a missing path
+    ships a tarball pip cannot build.
+    """
+    data = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    assert data["version"] == dexport.__version__, (
+        "package.json version is out of sync with src/__init__.py::__version__"
+    )
+    assert data["bin"] == {"dexport": "npm/cli.js"}
+    missing = [need for need in ("npm/", "src/", "pyproject.toml") if need not in data["files"]]
+    assert not missing, f"package.json 'files' does not ship: {missing}"

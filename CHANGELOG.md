@@ -9,6 +9,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- npm packaging: `npm install -g dexport` installs the CLI for people who do not
+  have a Python toolchain to hand. The wrapper in `npm/` builds a private
+  virtualenv inside the installed package and pip-installs the shipped sources
+  into it; `DEXPORT_PYTHON` overrides interpreter discovery. pipx/pip installs
+  are unchanged.
+
 - `install-agent` — writes a `/dexport` slash command for the coding agents it
   finds (Claude Code, Codex CLI, Cursor, Gemini CLI, opencode), each in that
   tool's own format and location, so `/dexport <question>` works out of the box.
