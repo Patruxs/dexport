@@ -103,21 +103,6 @@ To update, use `pipx install --force git+...`: plain `pipx upgrade` only
 compares version numbers, so it won't pick up new commits on `main`. Editable
 installs just need `git pull`.
 
-## First run
-
-Discord holds a single-instance lock, so a client already running *without*
-the debug flag can't be upgraded in place — quit it first, or let dexport
-restart it for you:
-
-```bash
-dexport --restart whoami        # → Logged in as YourName (@yourname)
-```
-
-Then pin the port and binary so later runs are frictionless:
-
-```bash
-dexport configure --port 9222 --binary /opt/discord/Discord --show
-```
 
 ## Usage
 
