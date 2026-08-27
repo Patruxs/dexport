@@ -179,6 +179,11 @@ Both files live under `$DEXPORT_HOME` (default `~/.dexport`), are written
 atomically (`<file>.tmp` + `os.replace`) as pretty JSON with `ensure_ascii=False`,
 and never contain headers or tokens. Their shapes are user-facing contracts.
 
+(`install-agent` is the one command that writes outside `$DEXPORT_HOME`: a
+`/dexport` slash-command file under the agent's own config directory, e.g.
+`~/.claude/commands/dexport.md`. Rendered from `agents.py`, never overwritten
+without `--force`, and it contains nothing but the prompt.)
+
 `config.json` — always exactly these four keys when written by dexport:
 
 ```json
@@ -198,7 +203,7 @@ corrupt file is treated as `{}`.
 
 ```json
 {
-  "guilds": [{"id": "123456789012345678", "name": "cú đêm"}],
+  "guilds": [{"id": "123456789012345678", "name": "my server"}],
   "channels": {
     "123456789012345678": [
       {"id": "234567890123456789", "name": "general", "type": 0, "parent_id": null}

@@ -1,7 +1,7 @@
 """Resolve human names to Discord IDs, with a small on-disk cache.
 
 Guild and channel lists are fetched once and cached under ~/.dexport/cache.json.
-Matching is diacritics-insensitive (so ``"cu dem"`` finds ``"cú đêm"``) and
+Matching is diacritics-insensitive (so ``"cafe"`` finds ``"café"``) and
 falls back to fuzzy scoring for near-misses.
 """
 

@@ -121,7 +121,7 @@ def export(
 def default_export_path(label: str, fmt: str) -> str:
     """File name from a label: non-alphanumerics become ``-`` (runs are kept), lower-cased.
 
-    ``"cú đêm #general"`` -> ``"cú-đêm--general.md"``. Kept as-is for compatibility
+    ``"My Server #general"`` -> ``"my-server--general.md"``. Kept as-is for compatibility
     with files exported by earlier versions.
     """
     slug = "".join(ch if ch.isalnum() else "-" for ch in label).strip("-").lower() or "export"

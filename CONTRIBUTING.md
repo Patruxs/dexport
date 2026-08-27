@@ -95,7 +95,7 @@ Do not edit `conftest.py` for one test's convenience; put helpers in your own te
 3. `src/cli/write.py`: copy `delete`. Build a `Target(guild, channel, guild_id, channel_id)` and
    call `run_write(ctx, target, build=lambda cid: ..., confirm="Pin message ...", done=..., yes=yes,
    dry_run=dry_run)`. Reuse `YesOpt`, `DryRunOpt` and the target option aliases from `cli/common.py`.
-4. README: add the row to the command reference table and an example under "Write"; CHANGELOG entry.
+4. README: add the row to the command reference table and a write example under "Usage"; CHANGELOG entry.
 
 ### Add a read command
 
@@ -114,7 +114,7 @@ Do not edit `conftest.py` for one test's convenience; put helpers in your own te
 2. Register it in `EXPORTERS` (keys are matched lower-case) and `EXPORT_EXTENSIONS`;
    `get_exporter` / `export_to_file` / `default_export_path` pick it up automatically.
 3. `tests/test_render.py`: assert chronological order and that attachments/reactions appear.
-4. Update the `--format` help text in `cli/read.py::export` and the README "Export" section.
+4. Update the `--format` help text in `cli/read.py::export` and the README export examples.
 
 ### Add a config key
 

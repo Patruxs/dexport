@@ -3,61 +3,38 @@
 [![CI](https://github.com/Patruxs/dexport/actions/workflows/ci.yml/badge.svg)](https://github.com/Patruxs/dexport/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Checked with mypy](https://img.shields.io/badge/mypy-strict-2a6db2)](https://mypy-lang.org/)
-[![Linted with ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-Drive **your own** Discord session from the command line — read, export, and
+Drive **your own** Discord session from the command line — read, export and
 send messages without a bot token.
 
-`dexport` doesn't use a bot token and it doesn't log in with your password.
-Instead it attaches to the **Discord desktop client you already have open**
-over the Chrome DevTools Protocol (CDP), snapshots the client's real request
-headers once, and then makes Discord API calls with an in-page `fetch`.
-Because the fetch runs inside Discord's own renderer, requests are
-same-origin and carry the client's real header cluster (`X-Super-Properties`,
-`X-Discord-Locale`, …). That is a *maintenance* decision, not a stealth one:
-those headers encode the client build, so reconstructing them by hand would
-mean tracking Discord's releases forever, and getting them wrong is a good way
-to have requests rejected or the session invalidated. Borrowing the live ones
-means every call is well-formed and your login keeps working. Nothing is
-forged and no header is invented — they are your own client's, sent from your
-own client.
+dexport attaches to the Discord desktop client you already have open over the
+Chrome DevTools Protocol, snapshots its real request headers once, and calls
+`/api/v9` with an in-page `fetch`. Reusing the live headers is a *correctness*
+choice, not a stealth one: they encode the client build, so hand-rolling them
+would mean tracking every Discord release. Nothing is forged — they are your
+own client's headers, sent from your own client.
 
 > [!CAUTION]
-> **Using this tool can get your Discord account permanently deleted.**
-> Automating a **user** account (a "self-bot") is against Discord's Terms of
-> Service, and the stated penalty is account termination — permanent, with no
-> practical appeal, and Discord's one-account-per-person rule means you are
-> not supposed to simply make a new one. dexport paces itself and respects
-> rate limits, but pacing is not permission: a well-behaved self-bot is still
-> a self-bot. There is no safe amount of this; there is only less risk and
-> more risk.
+> **This can get your Discord account permanently deleted.** Automating a user
+> account (a "self-bot") is against Discord's Terms of Service, and the penalty
+> is permanent termination. dexport paces itself and respects rate limits, but
+> pacing is not permission. Keep it personal, low-volume, and on your own
+> account and data — and read [What you're risking](#what-youre-risking)
+> first. MIT means no warranty; a terminated account can't be recovered.
 >
-> This tool is meant for personal, low-volume use on **your own** account and
-> data — e.g. exporting your own DM history, or scripting the occasional
-> message. Read [What you're risking](#what-youre-risking) before you run it.
-> Everything you do with dexport, you do at your own risk; the MIT licence
-> means there is no warranty and no liability, and the author cannot recover a
-> terminated account for you.
->
-> dexport prints this warning once, the first time it drives your account, and
-> keeps a short version in `dexport --help`.
+> The notice is printed once on first use and summarised in `dexport --help`.
 
 ## Contents
 
 - [How it works](#how-it-works)
 - [What you're risking](#what-youre-risking)
-- [Requirements](#requirements)
 - [Install](#install)
-- [Updating](#updating)
 - [First run](#first-run)
 - [Usage](#usage)
 - [Configuration](#configuration)
-- [Rate limiting & safety](#rate-limiting--safety)
 - [Project layout](#project-layout)
 - [Development](#development)
 - [Contributing & security](#contributing--security)
-- [License](#license)
 
 ## How it works
 
@@ -70,159 +47,64 @@ launcher  ──►  session/attach  ──►  header snapshot  ──►  api 
  the debug flag)
 ```
 
-Nothing sensitive is written to disk. The authorization header lives only in
-memory for the duration of a single command. `~/.dexport/` holds just
-`config.json`, a resolver cache (`cache.json`, guild/channel names ↔ IDs) and
-`notice-shown` (the marker for the one-time warning above) — never credentials
-or headers. The full account of what dexport does with your session is in
-[SECURITY.md](SECURITY.md).
+Nothing sensitive touches disk: the authorization header lives in memory for
+one command only. `~/.dexport/` holds `config.json`, a name ↔ ID cache
+(`cache.json`) and the one-time-notice marker — never credentials.
+[SECURITY.md](SECURITY.md) has the full account.
 
 ## What you're risking
 
-Short version: an irreversible account loss, a locally exposed Discord
-session, and irreversible writes to other people's conversations. In detail:
+- **Your account.** Termination for self-botting is permanent and takes
+  everything with it: DMs, friends, Nitro you paid for, servers you own.
+  Softer signals come first sometimes — a forced logout, a CAPTCHA/phone
+  lock, a wall of `429`s; treat any of them as a stop sign. dexport does not
+  hide you and does not try to. Risk scales with what you do: exporting your
+  own DM history once is not a 24/7 loop.
+- **The debug port.** Discord runs with `--remote-debugging-port`, which is
+  unauthenticated by design — any local process that reaches it can read your
+  messages, send as you, and take your session token. Never forward or expose
+  it, don't use dexport on a shared machine, and quit Discord normally when
+  you're done to close it. `--restart` kills the client outright (drafts lost,
+  calls dropped).
+- **Writes are real.** `send`/`edit`/`delete` hit the live API with no undo,
+  and names are matched *fuzzily*, so a typo can land a message in the wrong
+  channel. Preview with `--dry-run`, use `--channel-id` in scripts, and treat
+  `--yes` as removing your last safety check.
+- **Exports hold other people's messages.** Their names, IDs and content, in
+  plain text where you point `-o`. Most servers' rules forbid republishing
+  that, and exporting a server you don't own can get you banned from it.
 
-### 1. Your account — the big one
-
-- **Permanent termination.** Self-botting is enforced as a terms violation,
-  not a warning-first offence. If it happens you lose the account itself and
-  everything attached to it: DM history, friends, Nitro time you paid for,
-  purchased games and cosmetics, and any server you own (a deleted owner
-  account can take the server with it or leave it stranded).
-- **You cannot buy your way back.** Nitro does not protect an account, and a
-  terminated account is not restored on request. Ban appeals for self-botting
-  are rarely granted.
-- **Softer punishments happen first, sometimes.** A flagged session can be
-  invalidated (you get logged out everywhere), locked behind a phone/CAPTCHA
-  verification, or temporarily blocked from the API. Treat any of these as the
-  warning shot it is — stop, don't retry harder.
-- **dexport does not hide you and does not try to.** The header snapshot
-  exists so requests stay *well-formed* as the Discord client build changes —
-  it is a correctness measure, not an evasion measure. Nothing in this tool
-  claims or attempts to make automation undetectable, and no rate limit
-  setting makes automated use permitted.
-- **Risk scales with what you do.** Reading your own DM history once is at one
-  end; unattended loops, cron jobs, mass deletion, bulk reacting, scraping
-  servers you don't own, or anything that resembles a bot service, are at the
-  other. Do not run dexport on an account you cannot afford to lose.
-
-### 2. Your machine — the debug port
-
-- dexport needs Discord running with `--remote-debugging-port`. **That port is
-  unauthenticated by design.** While it is open, any process on your machine
-  that can reach `127.0.0.1:<port>` gets full control of the Discord renderer:
-  it can read your messages, send messages as you, and read your session
-  token. This is a property of the Chrome DevTools Protocol, not a dexport
-  bug.
-- Never forward, tunnel, or expose that port (no `ssh -R`, no `0.0.0.0`
-  binding, no container port publishing). Don't use dexport on a shared or
-  untrusted machine, or one you don't administer.
-- The port stays open for as long as that Discord process lives — not just
-  while a dexport command runs. **Quit and reopen Discord normally when you're
-  done** if you want it closed.
-- `--restart` kills the running Discord client (SIGTERM, then SIGKILL). Any
-  unsent message draft is lost and you drop out of a voice/video call.
-
-### 3. Your conversations — writes are real and irreversible
-
-- `send`, `reply`, `react`, `edit` and `delete` hit the live Discord API.
-  Nothing is sandboxed. A deleted message is gone, an edit is visible to
-  everyone as "(edited)", and other people (and their notifications) see
-  everything instantly.
-- Channel names are matched **fuzzily**, so a typo can resolve to a channel
-  you did not mean — a message meant for a private server can land in a public
-  one. Preview with `--dry-run` first, and use `--channel-id` in scripts:
-  with an explicit ID the fuzzy resolver is not consulted at all.
-- `--yes` removes the confirmation prompt and the last thing standing between
-  a wrong flag and a public mistake. Don't use it in loops you aren't watching.
-
-### 4. Other people's data — exports are not yours to spread
-
-- An export of a channel contains other members' messages, names and IDs. In
-  many jurisdictions that makes you responsible for how it is stored and
-  shared, and most servers' rules forbid republishing their content. Exporting
-  a server you don't own can get you banned from that server even if Discord
-  itself never notices.
-- Export files land in plain text where you point `-o`; treat them like any
-  other dump of private conversation. dexport itself stores no credentials
-  (see [SECURITY.md](SECURITY.md)), but it will happily write a channel's
-  entire history to a file you then forget about.
-
-### Using it with the least risk
-
-- Your own account, your own DMs and servers; ask before exporting anyone
-  else's.
-- Low volume, attended runs. No cron, no unattended loops, no bulk
-  delete/react sweeps.
-- Leave `floor_delay_min` / `floor_delay_max` at their defaults or raise them;
-  never lower them.
-- `--dry-run` before any write, `--channel-id` in anything scripted.
-- Close the debug port when you're done: quit Discord and reopen it normally.
-- If Discord logs you out, shows a CAPTCHA, or starts returning `429`s —
-  stop for the day rather than retrying.
-
-## Requirements
-
-- Python 3.11+
-- The Discord desktop client (Windows, macOS, or Linux — including Flatpak)
-  installed and logged in
-- Discord PTB / Canary are also detected on Linux
-
-You do **not** need to run `playwright install` — dexport connects to
-Discord's existing Electron process rather than launching its own browser.
+Least risk: your own account and data, low volume, attended runs; leave the
+delay floors alone; `--dry-run` before writes; stop for the day if Discord
+logs you out or starts returning `429`s.
 
 ## Install
 
-dexport is not on PyPI; install it from the repository:
+Requires Python 3.11+ and the Discord desktop client (Windows, macOS, Linux
+including Flatpak; PTB/Canary are detected on Linux) installed and logged in.
+You do **not** need `playwright install` — dexport attaches to Discord's own
+Electron process.
 
 ```bash
-pipx install git+https://github.com/Patruxs/dexport
-# or, from a local checkout:
-pipx install .
-# or, for development (editable):
-pip install -e ".[dev]"
+pipx install git+https://github.com/Patruxs/dexport   # or: pip install -e ".[dev]"
+dexport install-agent                                 # optional: adds /dexport
 ```
 
-`pipx` itself comes from `pip install --user pipx`; run `pipx ensurepath` once
-afterwards so the installed `dexport` command is on your `PATH`. Plain
-`pip install git+https://github.com/Patruxs/dexport` works too — pipx is only
-recommended because it keeps dexport and its dependencies in their own venv.
-
-## Updating
-
-```bash
-pipx upgrade dexport                                           # released versions
-pipx install --force git+https://github.com/Patruxs/dexport    # any commit on main
-```
-
-`pipx upgrade` compares *version numbers*, so it moves you from one release to
-the next but reports `already at latest version` for commits pushed since — the
-`--force` form (or `pipx reinstall dexport`) re-fetches the repository and is
-the one to use when you want the current `main`.
-
-Development installs need no reinstall: `git pull` is enough, because
-`pip install -e` points at your working tree. Re-run `pip install -e ".[dev]"`
-only when the dependencies or the `packages` list in `pyproject.toml` change.
+To update, use `pipx install --force git+...`: plain `pipx upgrade` only
+compares version numbers, so it won't pick up new commits on `main`. Editable
+installs just need `git pull`.
 
 ## First run
 
-dexport needs the Discord desktop client to expose a CDP port. If it isn't
-already, dexport will try to launch Discord with `--remote-debugging-port`.
-Because Discord uses a single-instance lock, an already-open client started
-*without* that flag can't be upgraded in place — so either fully quit Discord
-first, or let dexport restart it for you:
+Discord holds a single-instance lock, so a client already running *without*
+the debug flag can't be upgraded in place — quit it first, or let dexport
+restart it for you:
 
 ```bash
-dexport --restart whoami
+dexport --restart whoami        # → Logged in as YourName (@yourname)
 ```
 
-If it prints your account, the foundation works:
-
-```
-Logged in as YourName (@yourname)  (123456789012345678)
-```
-
-You can pin the port and binary so future runs are frictionless:
+Then pin the port and binary so later runs are frictionless:
 
 ```bash
 dexport configure --port 9222 --binary /opt/discord/Discord --show
@@ -230,47 +112,38 @@ dexport configure --port 9222 --binary /opt/discord/Discord --show
 
 ## Usage
 
-Connection flags (`--port`, `--restart`, `--binary`) are **global** — they go
-before the sub-command:
+Connection flags are **global** — they go before the sub-command:
 
 ```bash
 dexport [--port 9222] [--restart] [--binary /path/to/Discord] <command> [options]
 ```
 
-`dexport --version` prints the installed version and exits.
-
-### Read
+### Read and export
 
 ```bash
-dexport whoami
 dexport guilds
 dexport channels -g "my server"
 dexport read     -g "my server" -c "general" --limit 100
-```
-
-### Export (Markdown or JSON)
-
-```bash
-dexport export -g "my server" -c "general" --format md -o out.md
-dexport export --channel-id 123456789012345678 -f json -o out.json
+dexport export   -g "my server" -c "general" --format md -o out.md
+dexport export   --channel-id 123456789012345678 -f json -o out.json
 ```
 
 ### Write
 
-Write commands ask for confirmation by default, add a short human-like pause
-before acting, and support `--dry-run` to preview the exact HTTP request
-without sending anything.
+Write verbs confirm first, pause briefly, and accept `--dry-run` (preview the
+exact request, send nothing) and `--yes` (skip the confirmation):
 
 ```bash
 dexport send   -g "my server" -c "general" -m "hello!"
-dexport reply  -g "my server" -c "general" --to <message_id> -m "replying"
-dexport react  -g "my server" -c "general" --to <message_id> -e 👍
+dexport reply  --channel-id <channel_id> --to <message_id> -m "replying"
+dexport react  --channel-id <channel_id> --to <message_id> -e 👍
 dexport edit   --channel-id <channel_id> --to <message_id> -m "edited text"
-dexport delete --channel-id <channel_id> --to <message_id>
-
-dexport send -g "my server" -c "general" -m "hi" --yes       # skip confirmation
-dexport send -g "my server" -c "general" -m "hi" --dry-run   # preview only
+dexport delete --channel-id <channel_id> --to <message_id> --dry-run
 ```
+
+Names are fuzzy and diacritics-insensitive (`-g "my serv"` finds `My Server`,
+`-c "cafe"` finds `#café`); `--channel-id` skips the resolver entirely and is
+what you want in scripts.
 
 ### Command reference
 
@@ -287,130 +160,148 @@ dexport send -g "my server" -c "general" -m "hi" --dry-run   # preview only
 | `edit` | Edit one of your own messages. |
 | `delete` | Delete a message. |
 | `configure` | View or update `~/.dexport/config.json`. |
+| `install-agent` | Write the `/dexport` slash command for your coding agent(s). |
 
-Run `dexport <command> --help` for the full option list of any command.
+`dexport <command> --help` has the full option list of any command.
 
-Guild/channel names are matched diacritics-insensitively and fuzzily, so
-`-g "cu dem"` finds `cú đêm`. For scripting, pass `--guild-id` /
-`--channel-id` to skip the fuzzy lookup and avoid any matching ambiguity;
-with `--channel-id` the resolver is not consulted at all.
+### Just ask your agent instead
+
+The nicest way to live with dexport is to never type a flag. Once, after
+installing:
+
+```bash
+dexport install-agent
+```
+
+That writes a `/dexport` slash command into every coding agent it finds on your
+machine — Claude Code, Codex CLI, Cursor, Gemini CLI, opencode — each in that
+tool's own format and location. Restart the agent if it was open, and then you
+just talk to it:
+
+```
+/dexport what did I miss in #general today?
+/dexport summarise #team this week — who is waiting on a reply from me?
+/dexport did Mai reply yesterday? draft an answer, I'll send it
+```
+
+You never look up an ID: the command teaches the agent to find the channel
+itself with `dexport guilds` / `dexport channels`, export it to JSON, and
+answer from that file.
+
+| Flag | |
+| --- | --- |
+| `--target claude` | Install for specific agents instead of the detected ones; repeatable. |
+| `--project` | Write into `./` (this repo) instead of your home directory. |
+| `--force` | Overwrite a `/dexport` that is already there. |
+| `--print` | Print the text instead of installing, for any tool not on the list: `dexport install-agent --print > ~/.wherever/dexport.md`. |
+
+> [!CAUTION]
+> The installed command is read-only *by construction* — it allows `guilds`,
+> `channels` and `export`, and tells the agent never to send, reply, react,
+> edit or delete. Keep it that way. Everything an agent reads was written by
+> other people, so one that can read *and* write can be steered by anyone in
+> the channel; a polite instruction is not a control, the allowlist is. And
+> don't leave an agent polling on a timer — a bot service running on a user
+> account is precisely what gets accounts terminated.
+
+### Scripting notes
+
+- Discord must be running and logged in the whole time — there is no headless
+  mode. Run **one dexport at a time**: the rate limiter is per-process, so
+  parallel invocations just double your request rate.
+- Exit codes: `0` success (**and** when a confirmation is declined), `1`
+  dexport error (`error: ...` on stderr), `2` usage error. A write without
+  `--yes` in a non-interactive shell has no stdin to answer its prompt, so it
+  aborts with exit 1 and sends nothing.
+- Only `export -f json` is meant for parsing (raw message objects, oldest
+  first). `read`/`guilds`/`channels` are Rich-formatted for a terminal, and
+  `--dry-run` renders content as Rich markup — `[b]`/`[/]` in a message body
+  are mangled in the *preview* only; the request itself is built correctly.
+- For more than a couple of calls, acquire the session once instead of paying
+  for an attach — and possibly a page reload — per invocation:
+
+```python
+from dexport.client import Dexport
+from dexport.messages import fetch_history, send_message_request
+
+with Dexport.acquire() as dx:
+    history = fetch_history(dx.api, "123456789012345678", limit=200)
+    dx.api.execute(send_message_request("123456789012345678", "hello"))
+```
+
+  That layer has no confirmation prompt and no human pause — those live in the
+  CLI — but the rate limiter still applies.
 
 ## Configuration
 
-Settings are resolved in this order: CLI flag > environment variable >
-`~/.dexport/config.json` > built-in default.
+Resolved as **CLI flag > environment variable > `~/.dexport/config.json` >
+default**.
 
 | Config key | Env var | CLI flag | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `port` | `DEXPORT_PORT` | `--port` | `9222` | CDP port Discord exposes. |
 | `discord_binary` | `DEXPORT_DISCORD_BINARY` | `--binary` | auto-detected | Path to the Discord executable. |
-| `floor_delay_min` | — | — | `0.25` | Self-imposed delay window (seconds) before every request — lower bound. |
-| `floor_delay_max` | — | — | `0.6` | Self-imposed delay window (seconds) before every request — upper bound. |
-| — | `DEXPORT_HOME` | — | `~/.dexport` | Where config/cache are stored. |
+| `floor_delay_min` | — | — | `0.25` | Self-imposed delay before every request — lower bound (seconds). |
+| `floor_delay_max` | — | — | `0.6` | Self-imposed delay before every request — upper bound (seconds). |
+| — | `DEXPORT_HOME` | — | `~/.dexport` | Where config and cache are stored. |
 
-`dexport configure --port 9222 --binary /path/to/Discord` writes these to
-`~/.dexport/config.json`. `dexport configure --show` prints the stored config
-with defaults filled in (environment overrides are deliberately *not* applied,
-so they can never be written back to the file). `floor_delay_min` /
-`floor_delay_max` have no flag or env var — edit them in `config.json`
-directly.
-
-## Rate limiting & safety
-
-- A self-imposed floor delay (250–600 ms + jitter) before every request. The
-  window is configurable via `floor_delay_min` / `floor_delay_max` in
-  `config.json`.
-- Reads `X-RateLimit-Remaining` / `X-RateLimit-Reset-After` per route and
-  sleeps before a route runs dry.
-- On `429`, honours `retry_after` (global limits back off across all routes).
-- Write commands add an extra human-like pause and confirm before acting
-  unless `--yes` is passed.
-
-The exact limiter and retry rules are spelled out in
+`dexport configure --show` prints the stored file with defaults filled in;
+environment overrides are deliberately not applied, so they can never be
+written back. The delay floors have no flag or env var — edit `config.json`.
+On top of them, dexport tracks `X-RateLimit-*` per route, sleeps before a
+route runs dry, and honours `retry_after` on `429`; the exact rules are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#rate-limiting-and-retries).
 
 ## Project layout
 
-The package lives in `src/` and is imported as `dexport`:
-
-```
-.                     # repo root
-├── pyproject.toml    # name = "dexport", entry point, tool config
-├── tests/  docs/  Makefile  README.md
-└── src/              # the package — imported as `dexport`, modules below
-    ├── api.py  session.py  ...
-    ├── cli/
-    └── launcher/
-```
-
-`pyproject.toml` maps the directory onto the import name with
-`package-dir = { "dexport" = "src" }`, so `import dexport` and the built wheel
-(which ships a normal `dexport/` package) are unaffected. Two consequences for
-contributors: `packages` in `pyproject.toml` is hand-maintained because
-auto-discovery cannot see through the rename, and modules must use **relative**
-imports (`from .api import ApiCore`) — an absolute `from dexport.api import ...`
-inside `src/` resolves to the installed copy, not your working tree.
+The package lives in `src/` and is imported as `dexport`
+(`package-dir = { "dexport" = "src" }`). Two consequences: `packages` in
+`pyproject.toml` is hand-maintained, and modules inside `src/` must use
+relative imports.
 
 | Module | Responsibility |
 | --- | --- |
-| `launcher/` | Is the CDP port alive? Else find Discord and launch it with the debug flag, then poll the port. `discovery.py` locates the binary per OS (stable/PTB/Canary, Flatpak); `process.py` starts, finds and kills the process. |
+| `launcher/` | Is the CDP port alive? Else find Discord and launch it with the debug flag. `discovery.py` locates the binary per OS; `process.py` starts/finds/kills it. |
 | `session.py` | Attach over CDP, pick the real app page. The *only* module that touches Playwright. |
 | `headers.py` | Snapshot the client's authorized headers (RAM only) and sanitise them for `fetch`. |
 | `ratelimit.py` | Per-route limiter: floor delay, `X-RateLimit-*` bookkeeping, 429 handling. |
-| `api.py` | In-page `fetch` core + retries — the heart. `ApiRequest` in, `ApiResponse` out. |
+| `api.py` | In-page `fetch` core + retries. `ApiRequest` in, `ApiResponse` out. |
 | `resolver.py` | Name → ID with cache and diacritics-aware matching. |
-| `messages.py` | History pagination and the send/reply/react/edit/delete request builders (was `service.py`). |
+| `messages.py` | History pagination and the send/reply/react/edit/delete request builders. |
 | `render.py` | Terminal output + Markdown/JSON export (`EXPORTERS`). |
-| `client.py` | Wires the whole pipeline into `Dexport.acquire()`. |
-| `cli/` | Typer command surface: `app.py` (root + global flags), `common.py` (shared plumbing, `run_write`), `read.py`, `write.py`, `configure.py`. |
+| `client.py` | Wires the pipeline into `Dexport.acquire()`. |
+| `cli/` | Typer surface: `app.py` (root + global flags), `common.py` (`run_write` and friends), `read.py`, `write.py`, `configure.py`. |
 | `config.py` | `Settings` ↔ `config.json`, the resolver cache file, `DEXPORT_HOME` paths. |
-| `models.py` | `ChannelType`, `MESSAGE_CHANNEL_TYPES`, and the `GuildRef`/`ChannelRef` cache shapes. |
+| `models.py` | `ChannelType`, `MESSAGE_CHANNEL_TYPES`, the `GuildRef`/`ChannelRef` cache shapes. |
 | `errors.py` | The `DexportError` hierarchy the CLI turns into one-line errors. |
+| `agents.py` | The `/dexport` slash command: one prompt, rendered per agent tool. |
 | `util.py` | Pure helpers: diacritics stripping, `normalize`, `is_snowflake`, `human_bytes`. |
-
-`python -m dexport` works as well as the `dexport` entry point.
 
 ## Development
 
 ```bash
 make install    # or: pip install -e ".[dev]"
-make check      # ruff check + ruff format --check + mypy (strict) + pytest
+make check      # ruff check + ruff format --check + mypy (strict) + pytest — what CI runs
 ```
 
-`make check` is exactly what CI runs. The individual targets are `make test`,
-`make lint`, `make fmt` (auto-fix and format) and `make typecheck`; `make help`
-lists them. Every target uses `./.venv` when it exists, so there is nothing to
-activate.
+Individual targets: `make test`, `make lint`, `make fmt`, `make typecheck`.
+The tests are fully offline and an autouse fixture points `DEXPORT_HOME` at a
+temp dir, so your real `~/.dexport` is never touched. To smoke-test against a
+live client, `dexport --restart whoami` exercises the whole pipeline.
 
-The tests are fully offline. The pure/core logic (normalisation, rate-limiter
-math, emoji encoding, header sanitising, the API retry state machine via a
-fake session) is covered without a running Discord client, and an autouse
-fixture points `DEXPORT_HOME` at a temp dir so your real `~/.dexport` is never
-touched.
-
-To smoke-test against a live client after a change:
-
-```bash
-dexport --restart whoami                                # whole pipeline: launch → attach → snapshot → GET /users/@me
-dexport send --channel-id <channel_id> -m hi --dry-run  # builds and previews a write; contacts nothing
-```
-
-How the pieces fit together — and how to add a command, an export format or
-a config key — is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The
-contribution workflow is in [CONTRIBUTING.md](CONTRIBUTING.md).
+How the pieces fit together — and how to add a command, an export format or a
+config key — is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the workflow
+is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contributing & security
 
-Contributions are welcome — open an [issue](https://github.com/Patruxs/dexport/issues)
-or a pull request. Please keep the scope of automation features conservative
-given the ToS caveat above; the workflow and the review checklist are in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Issues and pull requests welcome — please keep the scope of automation
+features conservative given the caveat above.
 
-Found a security problem? **Don't open a public issue** — report it privately
-via [GitHub Security Advisories](https://github.com/Patruxs/dexport/security/advisories/new).
-[SECURITY.md](SECURITY.md) also documents exactly what dexport does with your
-session headers, and which sharp edges (the unauthenticated CDP port, most of
-all) are working as intended.
+Found a security problem? **Don't open a public issue** — use
+[GitHub Security Advisories](https://github.com/Patruxs/dexport/security/advisories/new).
+[SECURITY.md](SECURITY.md) documents what dexport does with your session
+headers and which sharp edges are working as intended.
 
 ## License
 

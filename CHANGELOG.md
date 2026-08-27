@@ -7,7 +7,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `install-agent` — writes a `/dexport` slash command for the coding agents it
+  finds (Claude Code, Codex CLI, Cursor, Gemini CLI, opencode), each in that
+  tool's own format and location, so `/dexport <question>` works out of the box.
+  `--target` picks agents explicitly, `--project` installs into the working
+  directory, `--print` dumps the text for anything else. The generated command
+  is read-only: it allows `guilds`/`channels`/`export` and forbids every write
+  verb.
 
 ## [0.1.0] - 2026-08-26
 
@@ -29,8 +37,8 @@ token, no password, nothing sensitive on disk.
 - A per-route rate limiter: a self-imposed floor delay with jitter,
   `X-RateLimit-*` bookkeeping, and `429` `retry_after` handling that backs off
   globally when the limit is global.
-- Name → ID resolution that is fuzzy and diacritics-insensitive (`-g "cu dem"`
-  finds `cú đêm`), cached in `~/.dexport/cache.json`, with `--guild-id` /
+- Name → ID resolution that is fuzzy and diacritics-insensitive (`-g "cafe"`
+  finds `café`), cached in `~/.dexport/cache.json`, with `--guild-id` /
   `--channel-id` to bypass it entirely for scripting.
 - Discord discovery and launch on Windows, macOS and Linux — including Flatpak,
   PTB and Canary — with `--restart` to work around the single-instance lock.
