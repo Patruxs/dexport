@@ -8,7 +8,7 @@ from typing import Annotated
 import typer
 
 from ..config import Paths, Settings
-from .common import console
+from .common import console, fail
 
 commands = typer.Typer()
 
@@ -18,6 +18,13 @@ def configure(
     port: Annotated[int | None, typer.Option("--port", help="Set the default CDP port.")] = None,
     binary: Annotated[
         str | None, typer.Option("--binary", help="Set the Discord binary path.")
+    ] = None,
+    launch_timeout: Annotated[
+        float | None,
+        typer.Option(
+            "--launch-timeout",
+            help="Seconds to wait for Discord's debug port after launching it.",
+        ),
     ] = None,
     show: Annotated[bool, typer.Option("--show", help="Print the current config.")] = False,
 ) -> None:
@@ -32,6 +39,11 @@ def configure(
         changed = True
     if binary is not None:
         settings.discord_binary = binary
+        changed = True
+    if launch_timeout is not None:
+        if launch_timeout <= 0:
+            fail("--launch-timeout must be greater than 0.")
+        settings.launch_timeout = launch_timeout
         changed = True
     if changed:
         settings.save(paths)

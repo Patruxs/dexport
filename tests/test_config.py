@@ -10,6 +10,7 @@ from dexport.config import (
     load_cache,
     save_cache,
 )
+from dexport.launcher import DEFAULT_LAUNCH_TIMEOUT
 
 
 def test_paths_default_honours_env(tmp_path, monkeypatch):
@@ -48,8 +49,34 @@ def test_settings_roundtrip_preserves_json_keys(tmp_path):
         "discord_binary": "/x",
         "floor_delay_min": 0.25,
         "floor_delay_max": 0.6,
+        "launch_timeout": 90.0,
     }
     assert Settings.load_file(paths) == Settings(port=4321, discord_binary="/x")
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("150", 150.0),
+        ("12.5", 12.5),
+        # A non-positive budget would make every launch fail instantly, so it
+        # is treated as "not given" rather than honoured.
+        ("0", DEFAULT_LAUNCH_TIMEOUT),
+        ("-5", DEFAULT_LAUNCH_TIMEOUT),
+        ("soon", DEFAULT_LAUNCH_TIMEOUT),
+        ("", DEFAULT_LAUNCH_TIMEOUT),
+    ],
+)
+def test_launch_timeout_env_override(raw, expected):
+    env = {"DEXPORT_LAUNCH_TIMEOUT": raw}
+    assert Settings().with_env_overrides(env).launch_timeout == expected
+
+
+def test_launch_timeout_env_beats_the_file(tmp_path):
+    paths = Paths(tmp_path)
+    Settings(launch_timeout=60.0).save(paths)
+    env = {"DEXPORT_LAUNCH_TIMEOUT": "200"}
+    assert Settings.load(paths, env).launch_timeout == 200.0
 
 
 def test_settings_tolerates_bad_values(tmp_path):
@@ -199,7 +226,13 @@ def test_env_binary_overrides_file_but_is_not_persisted(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------
 
 
-EXPECTED_KEY_ORDER = ["port", "discord_binary", "floor_delay_min", "floor_delay_max"]
+EXPECTED_KEY_ORDER = [
+    "port",
+    "discord_binary",
+    "floor_delay_min",
+    "floor_delay_max",
+    "launch_timeout",
+]
 
 
 def test_to_dict_key_order():

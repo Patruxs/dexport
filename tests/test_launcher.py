@@ -663,16 +663,35 @@ def test_ensure_discord_launches_found_binary_and_waits_for_endpoint(monkeypatch
     assert stubs.events == [("find", "/custom/Discord"), ("launch", FAKE_BINARY, PORT)]
 
 
-def test_ensure_discord_times_out_with_restart_hint(monkeypatch):
-    stubs = LauncherStubs(monkeypatch, alive=[False])
+def test_ensure_discord_timeout_blames_the_single_instance_lock_when_already_running(monkeypatch):
+    """Discord was up but not debuggable: the launch went to the old instance."""
+    stubs = LauncherStubs(monkeypatch, alive=[False], running=True)
 
     with pytest.raises(LauncherError) as exc_info:
         ensure_discord(PORT, wait_timeout=0, poll_interval=0)
 
     message = str(exc_info.value)
-    assert "--restart" in message
     assert str(PORT) in message
+    assert "single-instance lock" in message
+    # The flag is a root-callback option, so telling people to "pass --restart"
+    # without saying where sends them straight into "No such option".
+    assert "dexport --restart <command>" in message
     assert len(stubs.launches) == 1  # it did try
+
+
+def test_ensure_discord_timeout_blames_a_slow_start_when_it_launched_the_client(monkeypatch):
+    """We started it ourselves, so --restart is the wrong advice — it is just slow."""
+    stubs = LauncherStubs(monkeypatch, alive=[False], running=False)
+
+    with pytest.raises(LauncherError) as exc_info:
+        ensure_discord(PORT, wait_timeout=20, poll_interval=1)
+
+    message = str(exc_info.value)
+    assert "single-instance lock" not in message
+    assert "WITHOUT --restart" in message
+    # Suggests a bigger budget than the one that just failed.
+    assert "dexport configure --launch-timeout 40" in message
+    assert len(stubs.launches) == 1
 
 
 def test_ensure_discord_force_restart_refuses_to_launch_while_still_running(monkeypatch):
@@ -683,6 +702,18 @@ def test_ensure_discord_force_restart_refuses_to_launch_while_still_running(monk
 
     assert ("kill",) in stubs.events
     assert stubs.launches == []
+
+
+def test_ensure_discord_timeout_after_a_restart_does_not_re_suggest_restarting(monkeypatch):
+    """force_restart killed the old instance, so the lock story cannot apply."""
+    stubs = LauncherStubs(monkeypatch, alive=[False], running=False)
+
+    with pytest.raises(LauncherError) as exc_info:
+        ensure_discord(PORT, force_restart=True, wait_timeout=0, poll_interval=0)
+
+    assert "single-instance lock" not in str(exc_info.value)
+    assert ("kill",) in stubs.events
+    assert len(stubs.launches) == 1
 
 
 def test_ensure_discord_force_restart_kills_then_launches(monkeypatch):

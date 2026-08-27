@@ -92,13 +92,22 @@ def _settings(**overrides: Any) -> Settings:
 def test_acquire_passes_settings_to_launcher(pipeline):
     Dexport.acquire(settings=_settings(), force_restart=True)
     assert pipeline.ensure_calls == [
-        (5555, {"binary_override": "/opt/Discord/Discord", "force_restart": True})
+        (
+            5555,
+            {
+                "binary_override": "/opt/Discord/Discord",
+                "force_restart": True,
+                "wait_timeout": 90.0,
+            },
+        )
     ]
 
 
 def test_acquire_force_restart_defaults_to_false(pipeline):
     Dexport.acquire(settings=_settings(discord_binary=None))
-    assert pipeline.ensure_calls == [(5555, {"binary_override": None, "force_restart": False})]
+    assert pipeline.ensure_calls == [
+        (5555, {"binary_override": None, "force_restart": False, "wait_timeout": 90.0})
+    ]
 
 
 def test_acquire_connects_to_the_launcher_endpoint_and_snapshots_it(pipeline):
@@ -175,9 +184,17 @@ def test_acquire_without_settings_applies_env_overrides(pipeline, monkeypatch):
     Settings(port=4321, discord_binary="/from/file").save()
     monkeypatch.setenv("DEXPORT_PORT", "5000")
     monkeypatch.setenv("DEXPORT_DISCORD_BINARY", "/from/env")
+    monkeypatch.setenv("DEXPORT_LAUNCH_TIMEOUT", "150")
     Dexport.acquire()
     assert pipeline.ensure_calls == [
-        (5000, {"binary_override": "/from/env", "force_restart": False})
+        (
+            5000,
+            {
+                "binary_override": "/from/env",
+                "force_restart": False,
+                "wait_timeout": 150.0,
+            },
+        )
     ]
 
 

@@ -365,7 +365,7 @@ def test_channels_without_guild_fails(runner, fake_dx):
 # 5. configure
 # --------------------------------------------------------------------------
 
-CONFIG_KEYS = {"port", "discord_binary", "floor_delay_min", "floor_delay_max"}
+CONFIG_KEYS = {"port", "discord_binary", "floor_delay_min", "floor_delay_max", "launch_timeout"}
 
 
 def _shown_config(output: str) -> dict[str, Any]:
@@ -389,6 +389,21 @@ def test_configure_without_flags_behaves_like_show(runner):
     assert result.exit_code == 0, result.output
     assert set(_shown_config(result.output)) == CONFIG_KEYS
     assert "config:" in result.output
+
+
+def test_configure_saves_launch_timeout(runner, dexport_home):
+    result = runner.invoke(app, ["configure", "--launch-timeout", "180"])
+    assert result.exit_code == 0, result.output
+    saved = json.loads((dexport_home / "config.json").read_text(encoding="utf-8"))
+    assert saved["launch_timeout"] == 180.0
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_configure_rejects_a_non_positive_launch_timeout(runner, dexport_home, value):
+    """A zero budget would make every launch fail instantly; refuse to store it."""
+    result = runner.invoke(app, ["configure", "--launch-timeout", value])
+    assert result.exit_code != 0
+    assert not (dexport_home / "config.json").exists()
 
 
 def test_configure_saves_port_and_binary(runner, dexport_home):

@@ -215,11 +215,14 @@ default**.
 | `discord_binary` | `DEXPORT_DISCORD_BINARY` | `--binary` | auto-detected | Path to the Discord executable. |
 | `floor_delay_min` | — | — | `0.25` | Self-imposed delay before every request — lower bound (seconds). |
 | `floor_delay_max` | — | — | `0.6` | Self-imposed delay before every request — upper bound (seconds). |
+| `launch_timeout` | `DEXPORT_LAUNCH_TIMEOUT` | — | `90` | Seconds to wait for Discord's debug port after launching it. Raise it if a cold start is slower (`dexport configure --launch-timeout 180`). |
 | — | `DEXPORT_HOME` | — | `~/.dexport` | Where config and cache are stored. |
 
 `dexport configure --show` prints the stored file with defaults filled in;
 environment overrides are deliberately not applied, so they can never be
 written back. The delay floors have no flag or env var — edit `config.json`.
+`launch_timeout` has no flag either, but `dexport configure --launch-timeout N`
+writes it.
 On top of them, dexport tracks `X-RateLimit-*` per route, sleeps before a
 route runs dry, and honours `retry_after` on `429`; the exact rules are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#rate-limiting-and-retries).

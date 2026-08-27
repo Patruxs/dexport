@@ -54,6 +54,7 @@ class Dexport:
             settings.port,
             binary_override=settings.discord_binary,
             force_restart=force_restart,
+            wait_timeout=settings.launch_timeout,
         )
         session = Session.connect(endpoint)
         # From here on the session owns a live CDP connection + Playwright
