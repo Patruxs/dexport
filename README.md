@@ -24,6 +24,15 @@ own client's headers, sent from your own client.
 >
 > The notice is printed once on first use and summarised in `dexport --help`.
 
+> [!IMPORTANT]
+> **The Discord desktop client has to be open and logged in for dexport to
+> work** — every command, including the ones your coding agent runs. There is
+> no headless mode and no token login; dexport only drives the client that is
+> already running on your machine. If nothing is running, dexport launches
+> Discord itself with the debug flag; if a client is *already* open without
+> that flag, restart it with `dexport --restart <command>`. Quit Discord and
+> dexport stops working until you open it again.
+
 ## Contents
 
 - [How it works](#how-it-works)
@@ -112,6 +121,52 @@ dexport configure --port 9222 --binary /opt/discord/Discord --show
 
 ## Usage
 
+### Just ask your agent instead
+
+The nicest way to live with dexport is to never type a flag. Once, after
+installing:
+
+```bash
+dexport install-agent
+```
+
+That writes a `/dexport` slash command into every coding agent it finds on your
+machine — Claude Code, Codex CLI, Cursor, Gemini CLI, opencode, pi — each in that
+tool's own format and location. Restart the agent if it was open, and then you
+just talk to it in plain language. Sample prompts:
+
+```
+what did I miss in #general today?
+summarise #team this week — who is waiting on a reply from me?
+did Mai reply yesterday? draft an answer, I'll send it
+```
+
+Typing `/dexport` first is optional — it just forces the command. Asking in
+your own words is enough; the agent picks dexport up on its own. The one thing
+it can't do without is the Discord desktop client: keep it open and logged in
+while the agent works, otherwise every command fails.
+
+You never look up an ID: the command teaches the agent to find the channel
+itself with `dexport guilds` / `dexport channels`, export it to JSON, and
+answer from that file.
+
+| Flag | |
+| --- | --- |
+| `--target claude` | Install for specific agents instead of the detected ones; repeatable. |
+| `--project` | Write into `./` (this repo) instead of your home directory. |
+| `--force` | Overwrite a `/dexport` that is already there. |
+| `--print` | Print the text instead of installing, for any tool not on the list: `dexport install-agent --print > ~/.wherever/dexport.md`. |
+
+> [!CAUTION]
+> The installed command is read-only *by construction* — it allows `guilds`,
+> `channels` and `export`, and tells the agent never to send, reply, react,
+> edit or delete. Keep it that way. Everything an agent reads was written by
+> other people, so one that can read *and* write can be steered by anyone in
+> the channel; a polite instruction is not a control, the allowlist is. And
+> don't leave an agent polling on a timer — a bot service running on a user
+> account is precisely what gets accounts terminated.
+
+
 Connection flags are **global** — they go before the sub-command:
 
 ```bash
@@ -163,74 +218,6 @@ what you want in scripts.
 | `install-agent` | Write the `/dexport` slash command for your coding agent(s). |
 
 `dexport <command> --help` has the full option list of any command.
-
-### Just ask your agent instead
-
-The nicest way to live with dexport is to never type a flag. Once, after
-installing:
-
-```bash
-dexport install-agent
-```
-
-That writes a `/dexport` slash command into every coding agent it finds on your
-machine — Claude Code, Codex CLI, Cursor, Gemini CLI, opencode, pi — each in that
-tool's own format and location. Restart the agent if it was open, and then you
-just talk to it:
-
-```
-/dexport what did I miss in #general today?
-/dexport summarise #team this week — who is waiting on a reply from me?
-/dexport did Mai reply yesterday? draft an answer, I'll send it
-```
-
-You never look up an ID: the command teaches the agent to find the channel
-itself with `dexport guilds` / `dexport channels`, export it to JSON, and
-answer from that file.
-
-| Flag | |
-| --- | --- |
-| `--target claude` | Install for specific agents instead of the detected ones; repeatable. |
-| `--project` | Write into `./` (this repo) instead of your home directory. |
-| `--force` | Overwrite a `/dexport` that is already there. |
-| `--print` | Print the text instead of installing, for any tool not on the list: `dexport install-agent --print > ~/.wherever/dexport.md`. |
-
-> [!CAUTION]
-> The installed command is read-only *by construction* — it allows `guilds`,
-> `channels` and `export`, and tells the agent never to send, reply, react,
-> edit or delete. Keep it that way. Everything an agent reads was written by
-> other people, so one that can read *and* write can be steered by anyone in
-> the channel; a polite instruction is not a control, the allowlist is. And
-> don't leave an agent polling on a timer — a bot service running on a user
-> account is precisely what gets accounts terminated.
-
-### Scripting notes
-
-- Discord must be running and logged in the whole time — there is no headless
-  mode. Run **one dexport at a time**: the rate limiter is per-process, so
-  parallel invocations just double your request rate.
-- Exit codes: `0` success (**and** when a confirmation is declined), `1`
-  dexport error (`error: ...` on stderr), `2` usage error. A write without
-  `--yes` in a non-interactive shell has no stdin to answer its prompt, so it
-  aborts with exit 1 and sends nothing.
-- Only `export -f json` is meant for parsing (raw message objects, oldest
-  first). `read`/`guilds`/`channels` are Rich-formatted for a terminal, and
-  `--dry-run` renders content as Rich markup — `[b]`/`[/]` in a message body
-  are mangled in the *preview* only; the request itself is built correctly.
-- For more than a couple of calls, acquire the session once instead of paying
-  for an attach — and possibly a page reload — per invocation:
-
-```python
-from dexport.client import Dexport
-from dexport.messages import fetch_history, send_message_request
-
-with Dexport.acquire() as dx:
-    history = fetch_history(dx.api, "123456789012345678", limit=200)
-    dx.api.execute(send_message_request("123456789012345678", "hello"))
-```
-
-  That layer has no confirmation prompt and no human pause — those live in the
-  CLI — but the rate limiter still applies.
 
 ## Configuration
 
