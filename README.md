@@ -150,37 +150,30 @@ through an agent — it kills the running client, drafts and calls included.
 
 ### Just ask your agent instead
 
-The nicest way to live with dexport is to never type a flag. Once, after
-installing:
+The nicest way to live with dexport is to never type a flag:
 
 ```bash
 dexport install-agent
 ```
 
-That teaches every coding agent it finds on your machine — Claude Code, Codex
-CLI, Cursor, Gemini CLI, opencode, pi — how to use dexport, each in that tool's
-own format and location. Restart the agent if it was open.
-
-Each one gets two things: an [Agent Skill](https://agentskills.io) the agent
-loads by itself the moment a question is about Discord, and a `/dexport` slash
-command for when you want to be explicit. So asking in your own words is
-enough:
-
-```
-what did I miss in #general today?
-summarise #team this week — who is waiting on a reply from me?
-did Mai reply yesterday? draft an answer, I'll send it
-```
-
-If an agent answers from somewhere other than your Discord — a web search, say
-— it did not pick the skill up. Say it outright instead:
+This teaches every coding agent on your machine — Claude Code, Codex CLI,
+Cursor, Gemini CLI, opencode, pi — how to use dexport: an
+[Agent Skill](https://agentskills.io) it loads by itself for Discord
+questions, plus a `/dexport` slash command for when you want to be explicit.
+Restart the agent if it was already open.
 
 ```
 /dexport what did I miss in #general today?
+/dexport did Mai reply yesterday? draft an answer, I'll send it
 ```
 
-The one thing none of them can do without is the Discord desktop client: keep
-it open and logged in while the agent works, otherwise every command fails.
+Plain language works whenever the agent recognizes the question is about
+Discord and picks the skill up by itself. `/dexport` is the explicit form —
+use it any time, and especially when an agent answers from somewhere else (a
+web search, say) instead of your Discord, since that means it missed the
+skill and the prefix forces it through dexport instead.
+
+Keep the Discord desktop client open and logged in — nothing works without it.
 
 | Agent | Skill | Command |
 | --- | --- | --- |
