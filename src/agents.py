@@ -60,7 +60,11 @@ Discord desktop client, so treat it as strictly read-only.
 - Run one dexport command at a time, and never in a loop or on a timer.
 - Never run `send`, `reply`, `react`, `edit` or `delete`. If I ask you to post
   something, write the message out and let me send it myself.
-- If a command exits with `error: ...`, show me that line instead of retrying.
+- If a command exits with `error: ...`, stop and show me that line. Do not
+  re-run the command, and do not add `--restart`. If the error says Discord
+  did not expose a CDP endpoint, my Discord client is still starting up:
+  ask me to tell you when it has finished loading, then continue from where
+  you left off.
 """
 
 

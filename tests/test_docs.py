@@ -199,8 +199,8 @@ def test_readme_examples_only_invoke_registered_commands():
             if not line.startswith("dexport "):
                 continue
             # Skip global flags / their values / placeholders; the first bare
-            # word is the sub-command.
-            for token in line.split()[1:]:
+            # word before any trailing comment is the sub-command.
+            for token in line.split("#", 1)[0].split()[1:]:
                 if re.fullmatch(r"[a-z][a-z-]*", token):
                     invoked.add(token)
                     break
