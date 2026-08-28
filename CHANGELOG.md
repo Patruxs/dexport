@@ -7,6 +7,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-28
+
 ### Added
 
 - npm packaging: `npm install -g dexport` installs the CLI for people who do not
@@ -15,13 +17,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   into it; `DEXPORT_PYTHON` overrides interpreter discovery. pipx/pip installs
   are unchanged.
 
-- `install-agent` — writes a `/dexport` slash command for the coding agents it
-  finds (Claude Code, Codex CLI, Cursor, Gemini CLI, opencode), each in that
-  tool's own format and location, so `/dexport <question>` works out of the box.
-  `--target` picks agents explicitly, `--project` installs into the working
-  directory, `--print` dumps the text for anything else. The generated command
-  is read-only: it allows `guilds`/`channels`/`export` and forbids every write
-  verb.
+- `install-agent` — writes a `/dexport` slash command and an
+  [Agent Skill](https://agentskills.io) for the coding agents it finds (Claude
+  Code, Codex CLI, Cursor, Gemini CLI, opencode, pi), each in that tool's own
+  format and location. The skill is what the agent loads by itself the moment
+  a question is about Discord, so plain language works; `/dexport <question>`
+  stays as the explicit path. `--target` picks agents explicitly, `--project`
+  installs into the working directory, `--print` dumps the text for anything
+  else. The generated command and skill are read-only: they allow
+  `guilds`/`channels`/`export` and forbid every write verb.
+
+- `configure --launch-timeout` / `DEXPORT_LAUNCH_TIMEOUT` — how long to wait
+  for a launched Discord client to open its debug port before giving up
+  (default 90s).
 
 ## [0.1.0] - 2026-08-26
 
