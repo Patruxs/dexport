@@ -100,22 +100,50 @@ npm install -g dexport   # or: npm install -g github:Patruxs/dexport
 dexport install-agent    # optional: teaches your coding agent
 ```
 
-npm only carries the program — dexport itself is Python. The install step
-builds a private virtualenv inside the package and pip-installs dexport into
-it, so nothing lands in your system Python and `npm uninstall -g dexport`
-takes the whole thing with it. If Python is not on `PATH` under `python3` /
-`python` / `py -3`, point `DEXPORT_PYTHON` at the interpreter to use. Update
-with `npm install -g dexport@latest`.
+### Clean install
 
-Python tooling works too, and is the better fit if you already live in it:
+Two symptoms mean you are running a dexport you did not think you installed:
+`dexport --version` disagrees with what you just installed, or an error quotes
+timings and wording that are nowhere in the current source. Both come from the
+same thing — more than one copy on `PATH`, and the first one wins, which is not
+necessarily the one you upgraded. An npm global next to a `pipx` install does
+it, and so does `pipx upgrade` deciding there is nothing to do because the
+version number never moved.
+
+Remove every copy, then install exactly one:
 
 ```bash
-pipx install git+https://github.com/Patruxs/dexport   # or: pip install -e ".[dev]"
+which -a dexport            # Windows: where dexport
+                            # more than one line is the whole problem
+npm uninstall -g dexport
+
+npm install -g dexport      # or: npm install -g github:Patruxs/dexport
+hash -r                     # bash caches resolved paths — without this your
+                            # shell keeps calling the binary you just deleted
+dexport --version           # must be the version you meant to install
 ```
 
-To update a pipx install, use `pipx install --force git+...`: plain `pipx
-upgrade` only compares version numbers, so it won't pick up new commits on
-`main`. Editable installs just need `git pull`.
+Ignore "not installed" complaints from the uninstall lines; they are there to
+catch whichever installer you actually used.
+
+Then put the agent files back. Uninstalling never touches them, and they are
+*not* refreshed by an upgrade either, because nothing is overwritten silently:
+
+```bash
+dexport install-agent --force
+```
+
+`~/.dexport/` survives all of this on purpose — `config.json`, the name ↔ ID
+cache and the notice marker are not tied to any version. Delete the directory
+as well if you want the first-run experience back, including the one-time
+notice.
+
+If commands still fail after that, the install is fine and the problem is on
+the Discord side. `dexport --restart guilds` is the one to try: a client that
+was started normally has no debug port, and Discord's single-instance lock
+means a second launch is handed to it rather than replacing it, so dexport
+cannot attach until that client is actually gone. Run it yourself rather than
+through an agent — it kills the running client, drafts and calls included.
 
 
 ## Usage
