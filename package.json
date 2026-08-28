@@ -1,6 +1,6 @@
 {
   "name": "dexport",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Drive your own Discord session from the CLI by attaching to the running desktop client over CDP.",
   "keywords": [
     "discord",

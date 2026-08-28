@@ -1,4 +1,5 @@
-"""The ``install-agent`` command: drop a ``/dexport`` slash command into
+"""The ``install-agent`` command: drop a ``/dexport`` slash command -- and,
+where the agent supports Agent Skills, a model-discoverable ``SKILL.md`` -- into
 whatever coding agents are installed."""
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ def install_agent(
         bool, typer.Option("--print", help="Print the command text, install nothing.")
     ] = False,
 ) -> None:
-    """Install the /dexport slash command for your coding agent(s)."""
+    """Install the /dexport command (and skill) for your coding agent(s)."""
     picked = _validated(target)
     if show:
         # Raw echo, not console.print: this is meant to be piped into a file,
@@ -38,20 +39,41 @@ def install_agent(
         typer.echo(agents.render(picked[0] if len(picked) == 1 else None))
         return
 
-    root = Path.cwd() if project else None
+    home, root = Path.home(), Path.cwd() if project else None
     written = 0
+    skilled = False
     for agent in picked or _detected():
-        path = agents.target_path(agent, home=Path.home(), root=root)
-        if path is None:
-            console.print(f"[yellow]skipped[/yellow] {agent.label}: no project-level commands")
+        # The two files are placed independently: Codex takes a project-level
+        # skill but keeps its prompts user-level, so one being out of scope
+        # must not skip the other.
+        command = agents.target_path(agent, home=home, root=root)
+        skill = agents.skill_path(agent, home=home, root=root)
+        if command is None and skill is None:
+            console.print(f"[yellow]skipped[/yellow] {agent.label}: nothing at project level")
             continue
-        if agents.write(path, agents.render(agent), force=force):
-            console.print(f"[green]installed[/green] {agent.label}  [dim]{path}[/dim]")
-            written += 1
-        else:
-            console.print(f"[yellow]exists[/yellow] {agent.label}  [dim]{path}[/dim] (--force)")
+        if command is not None:
+            written += _write(f"{agent.label} command", command, agents.render(agent), force=force)
+        if skill is not None:
+            written += _write(
+                f"{agent.label} skill", skill, agents.render_skill(agent), force=force
+            )
+            skilled = True
     if written:
-        console.print("\nRestart your agent if it was open, then try: [bold]/dexport[/bold] ...")
+        console.print("\nRestart your agent if it was open.")
+        if skilled:
+            # The skill is the whole point of asking in plain words: it is the
+            # only copy the model loads without being told to.
+            console.print("Then just ask about your Discord in plain language.")
+        console.print("Either way, [bold]/dexport[/bold] ... always works.")
+
+
+def _write(label: str, path: Path, text: str, *, force: bool) -> int:
+    """Write one file, report it, and return how many were actually written."""
+    if agents.write(path, text, force=force):
+        console.print(f"[green]installed[/green] {label}  [dim]{path}[/dim]")
+        return 1
+    console.print(f"[yellow]exists[/yellow] {label}  [dim]{path}[/dim] (--force)")
+    return 0
 
 
 def _validated(target: list[str] | None) -> list[agents.AgentTarget]:

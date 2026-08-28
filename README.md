@@ -131,8 +131,12 @@ dexport install-agent
 
 That teaches every coding agent it finds on your machine — Claude Code, Codex
 CLI, Cursor, Gemini CLI, opencode, pi — how to use dexport, each in that tool's
-own format and location. Restart the agent if it was open, and then you just
-talk to it in plain language. Sample prompts:
+own format and location. Restart the agent if it was open.
+
+Each one gets two things: an [Agent Skill](https://agentskills.io) the agent
+loads by itself the moment a question is about Discord, and a `/dexport` slash
+command for when you want to be explicit. So asking in your own words is
+enough:
 
 ```
 what did I miss in #general today?
@@ -140,10 +144,28 @@ summarise #team this week — who is waiting on a reply from me?
 did Mai reply yesterday? draft an answer, I'll send it
 ```
 
-There is nothing to type first — asking in your own words is enough, the agent
-picks dexport up on its own. The one thing it can't do without is the Discord
-desktop client: keep it open and logged in while the agent works, otherwise
-every command fails.
+If an agent answers from somewhere other than your Discord — a web search, say
+— it did not pick the skill up. Say it outright instead:
+
+```
+/dexport what did I miss in #general today?
+```
+
+The one thing none of them can do without is the Discord desktop client: keep
+it open and logged in while the agent works, otherwise every command fails.
+
+| Agent | Skill | Command |
+| --- | --- | --- |
+| Claude Code | `~/.claude/skills/dexport/` | `~/.claude/commands/dexport.md` |
+| Codex CLI | `~/.agents/skills/dexport/` | `~/.codex/prompts/dexport.md` |
+| Cursor | `~/.cursor/skills/dexport/` | `~/.cursor/commands/dexport.md` |
+| Gemini CLI | `~/.gemini/skills/dexport/` | `~/.gemini/commands/dexport.toml` |
+| opencode | `~/.config/opencode/skills/dexport/` | `~/.config/opencode/command/dexport.md` |
+| pi | `~/.pi/agent/skills/dexport/` | `~/.pi/agent/prompts/dexport.md` |
+
+Codex is the odd one: it has no `~/.codex/skills`, and reads the vendor-neutral
+`~/.agents/skills` instead — which Cursor, Gemini CLI, opencode and pi also
+honour.
 
 You never look up an ID either: the instructions teach the agent to find the
 channel itself with `dexport guilds` / `dexport channels`, export it to JSON,
@@ -153,13 +175,14 @@ and answer from that file.
 | --- | --- |
 | `--target claude` | Install for specific agents instead of the detected ones; repeatable. |
 | `--project` | Write into `./` (this repo) instead of your home directory. |
-| `--force` | Overwrite instructions that are already there. |
+| `--force` | Overwrite instructions that are already there. Needed when upgrading dexport, since nothing is replaced silently. |
 | `--print` | Print the text instead of installing, for any tool not on the list: `dexport install-agent --print > ~/.wherever/dexport.md`. |
 
 > [!CAUTION]
-> The installed instructions are read-only *by construction* — they allow
-> `guilds`, `channels` and `export`, and tell the agent never to send, reply,
-> react, edit or delete. Keep them that way. Everything an agent reads was
+> The installed instructions are read-only by design — they tell the agent
+> never to send, reply, react, edit or delete, and the `allowed-tools` grant
+> covers only `guilds`, `channels` and `export`, so a write verb always stops
+> at a permission prompt instead of running unattended. Keep them that way. Everything an agent reads was
 > written by other people, so one that can read *and* write can be steered by
 > anyone in the channel; a polite instruction is not a control, the allowlist is. And
 > don't leave an agent polling on a timer — a bot service running on a user

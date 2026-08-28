@@ -1,10 +1,17 @@
-"""The ``/dexport`` slash command, rendered for each coding agent.
+"""The ``/dexport`` slash command and skill, rendered for each coding agent.
 
 One prompt (:data:`PROMPT`), several wrappers: every agent keeps its commands
 in a different place and spells "the rest of what the user typed" differently.
 :func:`render` produces the file body for a target, :func:`target_path` says
 where it goes, and ``dexport install-agent`` writes it. Anything not listed in
 :data:`TARGETS` is served by ``--print``.
+
+A slash command only reaches the model when the user types it, so every target
+also gets the same prompt as an Agent Skills ``SKILL.md`` (:func:`render_skill`
+/ :func:`skill_path`), which the model loads on its own when a question is
+about Discord -- that is what makes "what did I miss in #general?" work without
+a leading ``/dexport``. ``SKILL.md`` is one open format (agentskills.io) that
+all six agents read; only the directory differs.
 
 The prompt is deliberately read-only: it allows the three read verbs and bans
 the write ones, so an installed ``/dexport`` can never post as the user.
@@ -21,9 +28,23 @@ NAME = "dexport"
 DESCRIPTION = "Read my Discord and answer questions about it"
 ARGUMENT_HINT = "what you want to know"
 
-#: Claude Code tool allowlist — read verbs only, so a prompt injected into a
-#: channel cannot talk the agent into posting anything.
+#: Claude Code tool allowlist — read verbs only. Note what this does and does
+#: not do: it *pre-approves* the listed commands, it does not forbid the rest.
+#: Its value is that the write verbs stay outside the grant and so always hit a
+#: permission prompt, which is where a channel-injected instruction gets caught.
 ALLOWED_TOOLS = "Bash(dexport guilds:*), Bash(dexport channels:*), Bash(dexport export:*), Read"
+
+#: Model-facing trigger text for the skill. Unlike :data:`DESCRIPTION` (a menu
+#: label for a command the user picked) this one has to earn its own recall, so
+#: it spells out the occasions. Keep it free of ``#`` and ``: `` -- it is
+#: rendered as an unquoted YAML scalar.
+SKILL_DESCRIPTION = (
+    "Read the user's own Discord and answer questions about it with the dexport CLI. "
+    "Use whenever the user asks about a Discord server, channel or DM - what was said, "
+    "posted, decided, agreed or missed, who replied to whom, or to summarise, search, "
+    "catch up on or export message history. Also use it when they name a channel with a "
+    "leading hash. Read-only - it never posts, edits or reacts."
+)
 
 PROMPT = """\
 Answer questions about my Discord with the `dexport` CLI. It drives my own
@@ -76,6 +97,23 @@ def _toml(request: str) -> str:
 
 
 @dataclass(frozen=True)
+class SkillSupport:
+    """Where one agent keeps Agent Skills, and whether it reads ``allowed-tools``."""
+
+    #: Skills directory, relative to ``$HOME``; the skill lands in ``<dir>/dexport/``.
+    user_dir: str
+    #: Skills directory, relative to a project root (``None`` = user-level only).
+    project_dir: str | None
+    #: Emit the :data:`ALLOWED_TOOLS` grant. The Agent Skills spec defines the
+    #: field as *space*-separated and experimental; :data:`ALLOWED_TOOLS` is
+    #: comma-separated, which only Claude Code accepts ("space- or
+    #: comma-separated string, or a YAML list"). A space-delimited parser would
+    #: read it as the tokens ``Bash(dexport`` / ``guilds:*),`` and grant
+    #: whatever those happen to match, so everyone else is better off without.
+    allowed_tools: bool = False
+
+
+@dataclass(frozen=True)
 class AgentTarget:
     """Where one agent keeps its slash commands, and in what shape."""
 
@@ -90,6 +128,8 @@ class AgentTarget:
     #: How this agent injects the user's words; ``None`` = it appends them.
     argument_slot: str | None
     render: Callable[[str], str]
+    #: Agent Skills support, if the agent has any.
+    skill: SkillSupport | None = None
 
 
 TARGETS: tuple[AgentTarget, ...] = (
@@ -101,6 +141,11 @@ TARGETS: tuple[AgentTarget, ...] = (
         project_path=".claude/commands/dexport.md",
         argument_slot="$ARGUMENTS",
         render=_claude,
+        skill=SkillSupport(
+            user_dir=".claude/skills",
+            project_dir=".claude/skills",
+            allowed_tools=True,
+        ),
     ),
     AgentTarget(
         key="codex",
@@ -110,6 +155,11 @@ TARGETS: tuple[AgentTarget, ...] = (
         project_path=None,
         argument_slot="$ARGUMENTS",
         render=_plain_md,
+        # Codex has no ``.codex/skills``: it reads the vendor-neutral
+        # ``.agents/skills`` only -- at $HOME, at the repo root and at the cwd.
+        # It is also the one target whose scopes differ between the two files,
+        # since its prompts stay user-level.
+        skill=SkillSupport(user_dir=".agents/skills", project_dir=".agents/skills"),
     ),
     AgentTarget(
         key="cursor",
@@ -119,6 +169,7 @@ TARGETS: tuple[AgentTarget, ...] = (
         project_path=".cursor/commands/dexport.md",
         argument_slot=None,
         render=_plain_md,
+        skill=SkillSupport(user_dir=".cursor/skills", project_dir=".cursor/skills"),
     ),
     AgentTarget(
         key="gemini",
@@ -128,6 +179,7 @@ TARGETS: tuple[AgentTarget, ...] = (
         project_path=".gemini/commands/dexport.toml",
         argument_slot="{{args}}",
         render=_toml,
+        skill=SkillSupport(user_dir=".gemini/skills", project_dir=".gemini/skills"),
     ),
     AgentTarget(
         key="opencode",
@@ -137,6 +189,9 @@ TARGETS: tuple[AgentTarget, ...] = (
         project_path=".opencode/command/dexport.md",
         argument_slot="$ARGUMENTS",
         render=_frontmatter_md,
+        # opencode reads project skills from a bare ``.opencode/``, the same
+        # split its commands already have.
+        skill=SkillSupport(user_dir=".config/opencode/skills", project_dir=".opencode/skills"),
     ),
     AgentTarget(
         key="pi",
@@ -149,6 +204,7 @@ TARGETS: tuple[AgentTarget, ...] = (
         project_path=".pi/prompts/dexport.md",
         argument_slot="$ARGUMENTS",
         render=_hinted_md,
+        skill=SkillSupport(user_dir=".pi/agent/skills", project_dir=".pi/skills"),
     ),
 )
 
@@ -170,6 +226,15 @@ def _request(token: str | None) -> str:
     return f"\nMy request:\n\n{token}"
 
 
+def render_skill(target: AgentTarget) -> str:
+    """The ``SKILL.md`` body for *target*. No argument slot: a skill is loaded
+    by the model off its own description, not invoked with the user's words."""
+    head = f"---\nname: {NAME}\ndescription: {SKILL_DESCRIPTION}\n"
+    if target.skill is not None and target.skill.allowed_tools:
+        head += f"allowed-tools: {ALLOWED_TOOLS}\n"
+    return f"{head}---\n\n{PROMPT}"
+
+
 def target_path(target: AgentTarget, *, home: Path, root: Path | None = None) -> Path | None:
     """Absolute path of the command file; ``None`` if *root* is given (project
     scope) but this agent has no project-level command directory."""
@@ -178,6 +243,18 @@ def target_path(target: AgentTarget, *, home: Path, root: Path | None = None) ->
     if target.project_path is None:
         return None
     return root / target.project_path
+
+
+def skill_path(target: AgentTarget, *, home: Path, root: Path | None = None) -> Path | None:
+    """Absolute path of the ``SKILL.md``; ``None`` if this agent has no skills,
+    or none at the requested scope."""
+    if target.skill is None:
+        return None
+    if root is None:
+        return home / target.skill.user_dir / NAME / "SKILL.md"
+    if target.skill.project_dir is None:
+        return None
+    return root / target.skill.project_dir / NAME / "SKILL.md"
 
 
 def detect(home: Path) -> list[AgentTarget]:
