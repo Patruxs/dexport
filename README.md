@@ -33,6 +33,12 @@ own client's headers, sent from your own client.
 > that flag, restart it with `dexport --restart <command>`. Quit Discord and
 > dexport stops working until you open it again.
 
+
+
+https://github.com/user-attachments/assets/a6802fa7-bf43-46bb-9109-53ad9c0a0c45
+
+
+
 ## Contents
 
 - [How it works](#how-it-works)
